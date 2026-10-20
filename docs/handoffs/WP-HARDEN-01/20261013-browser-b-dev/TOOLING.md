@@ -1,0 +1,17 @@
+# 단계 B 브라우저 도구 선택·추가 전 기록
+
+07_browser_acceptance_work_pack §4의 관리 사전 위임에 따른 개발 전용 추가다. 기존 Playwright1.62.1(번들 Node24.19.0)·Chromium151.0.7922.34/revision1234를 확인했다. 전용 Chrome 사용자 CA 저장소는 있으나 native 파일 선택을 필요로 했고, Computer Use app 승인 timeout 때문에 가져오기를 완료하지 못했다. headless filechooser/선택자 시도와 snapshot/exit 원본은 browser-trust/profile-ca 라벨 증거에 남긴다. TLS 경고 우회·검증 해제는 하지 않았다.
+
+대안은 같은 고정 Playwright의 **Firefox153.0/revision1538 Windows 시험 빌드**와 Mozilla Certificates.Install 정책이다. 공급자 저장소: [Playwright browsers](https://playwright.dev/docs/browsers), [Playwright BrowserType](https://playwright.dev/docs/api/class-browsertype), [Mozilla Certificates 정책](https://firefox-admin-docs.mozilla.org/reference/policies/certificates/). 설치 정책은 PEM CA를 Firefox 인증서 저장소에 넣는 방식이며 OS 신뢰 추가가 아니다. 새 복사본과 task 전용 profile만 사용한다. ImportEnterpriseRoots=false, cert 검증 기본값 유지, ignoreHTTPSErrors=false다.
+
+- 다운로드 URL: `https://cdn.playwright.dev/dbazure/download/playwright/builds/firefox/1538/firefox-win64.zip` (설치된 playwright-core/browsers.json·공식CLI dry-run에서 확인).
+- 고정 Playwright1.62.1·Firefox1538 조합. Playwright Apache-2.0, Firefox MPL-2.0 및 동봉 구성요소 고지는 다운로드 파일의 LICENSE/about로 별도 저장한다. 제품 runtime·Python lock/image에 추가하지 않는다.
+- 저장: ignored `artifacts/browser-tools-b/`; 프로필은 ignored `artifacts/profile-browser-b-firefox/`, 정책은 그 새 browser 복사본의 distribution/policies.json. 기존 브라우저·Windows CA/GPO/개인 프로필 변경0.
+- 다운로드 시 TLS 검증, ZIP/실행파일 SHA256·Authenticode 상태를 기록한다. 공급자가 공개한 독립 예상ZIP digest가 없다면 사후계산 hash를 공급자 인증 증명으로 오인하지 않는다. 실제 내려받은 byte/버전·원출처와 알려진 한계를 기록한다.
+- 수집/전송: 공식 CDN에서 browser binary를 내려받는 요청만, workspace·사용자자료·token/key 외부 업로드0. 브라우저는 localhost 시험 앱만 방문하고 telemetry/update/network prediction 등 background 기능을 전용 정책/prefs로 제한한다. 페이지 traffic의 raw HAR/trace/video와 credential 포함 스크린샷은 수집하지 않는다.
+- 신규 브라우저 OS/native/라이선스 전체 전수 보안 인증을 주장하지 않는다. npm bundled Playwright inventory/audit와 패키지 signature/hash/관련 회귀를 분리한다. 실패하면 정확한 결과를 보존한다.
+- 재현: 같은 고정 URL로 새 전용 경로에 download/extract → 기록된 SHA·version 비교 → task 전용 CA policy/profile → untrusted negative/trusted positive browser 시험. 제거는 browser/process 종료 뒤 지정 browser-tools/profile 경로가 C:/sogaeding/artifacts 안임을 확인한 후 그 경로만 삭제한다. 이번에는 사용자 시연을 위해 보존한다.
+
+실측 보완: 다운로드 실행파일은 Authenticode `NotSigned`, publisher 예상ZIP digest는 registry에서 미제공이다. `download-manifest.json`의 TLS 공식URL/ZIP·exe SHA는 재현용이며 서명 검증 성공을 주장하지 않는다. 시험 Firefox의 자동화 startup에서는 Certificates.Install 정책이 실제 NSS DB에 적용되지 않아 UNKNOWN_ISSUER가 났고 about:policies 진단도 timeout으로 보존했다. 검증을 끄지 않고, 같은 다운로드에 동봉된 nss3.dll의 공식 certutil 경로(`CERT_NewTempCertificate` → `PK11_ImportCert` → `CERT_ChangeCertTrust`)로 **task profile cert9.db에만** 시험 CA를 import한다. 신뢰 문자열 C,,은 [Mozilla NSS 문서](https://firefox-source-docs.mozilla.org/security/nss/runbooks/rootstore.html)의 website CA 신뢰다. [공식 NSS cert.h](https://github.com/mozilla/nss/blob/master/lib/certdb/cert.h)와 [Mozilla 경로를 사용하는 Chromium 설명](https://chromium.googlesource.com/chromium/src/net/+/master/third_party/mozilla_security_manager/nsNSSCertificateDB.cpp)을 대조했다. 최소 로컬 wrapper `tools/browser_profile_ca.py`는 새 artifact profile 경로만 허용하고 Windows store/GPO/기존 profile을 수정하지 않는다. 새 dependency DLL은 추가하지 않는다. 실제 negative/positive browser 검증으로 적용 여부를 판단한다.
+
+별도 AI R-B-001 재현 보완: 완전히 빈 profile에서는 NSS trust가 실패했다. 재현 순서는 tools/browser_prepare_profile.mjs로 blank Firefox launch/close → browser_profile_ca.py → trusted launch다. 신규 profile-browser-b-demo-fresh에서 초기화·import·실제 승인/resume smoke가 모두 exit0이었다. 첫 실패는 reviewer profile-ca 원본, 재시험은 작성자 fresh-demo-* 원본에 보존했다. 최종 demo 런처에 초기화 단계를 넣었고 OS CA 변경/검증 우회는 없다.

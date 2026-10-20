@@ -1,0 +1,21 @@
+diff --git a/models/config.yaml b/models/config.yaml
+index 9ae123e..77f2493 100644
+--- a/models/config.yaml
++++ b/models/config.yaml
+@@ -1,6 +1,7 @@
+ model:
+   name: forecast-small
+-  batch_size: 16
++  batch_size: 32
+   learning_rate: 0.0003
++  gradient_clip_norm: 1.0
+ training:
+   epochs: 12
+diff --git a/tests/test_training_config.py b/tests/test_training_config.py
+index 6ada9b4..0053fa6 100644
+--- a/tests/test_training_config.py
++++ b/tests/test_training_config.py
+@@ -1,2 +1,3 @@
+ def test_training_config(config):
+     assert config["model"]["batch_size"] > 0
++    assert config["model"]["gradient_clip_norm"] > 0

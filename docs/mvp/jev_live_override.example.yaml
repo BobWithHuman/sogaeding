@@ -1,0 +1,20 @@
+# Preparation example ONLY. No paid budget/activation is authorized by this file.
+# Do not run before the user chooses synthetic data, request/token/cost caps and policy_id.
+services:
+  control:
+    environment:
+      JEV_POLICY_FILE: /jev-config/policy.json
+    volumes:
+      - type: bind
+        source: ./artifacts/runtime-hookgw/jev-user/jev.api-key
+        target: /jev-key/jev.api-key
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./artifacts/runtime-hookgw/jev-user/policy.json
+        target: /jev-config/policy.json
+        read_only: true
+        bind: {create_host_path: false}
+      - jev-provider-budget:/jev-budget
+volumes:
+  jev-provider-budget: {}

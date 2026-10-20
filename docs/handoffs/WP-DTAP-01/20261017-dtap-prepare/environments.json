@@ -1,0 +1,831 @@
+{
+  "customer_service": {
+    "compose_path": "dt_arena/envs/customer_service/docker-compose.yml",
+    "compose_sha256": "5e439ea18c34c56c3a452a346745b6da726a62e299a713e8fc05b2b82377eb4f",
+    "services": {
+      "postgres": {
+        "image": "decodingtrustagent/servicenow:db",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "cs-service": {
+        "image": "decodingtrustagent/servicenow:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "reset-api": {
+        "image": "decodingtrustagent/servicenow:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${CUSTOMER_SERVICE_RESET_PORT}/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "gmail": {
+    "compose_path": "dt_arena/envs/gmail/docker-compose-hub.yml",
+    "compose_sha256": "7c29adf4a1e756d2faaa9552b1538420ae127b38de630fbf20c107aad3049ed1",
+    "services": {
+      "mailpit": {
+        "image": "axllent/mailpit:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "user-service": {
+        "image": "decodingtrustagent/gmail:service-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "gmail-ui": {
+        "image": "decodingtrustagent/gmail:ui-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "auth": {
+        "url": "http://127.0.0.1:${GMAIL_AUTH_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "slack": {
+    "compose_path": "dt_arena/envs/slack/docker-compose-hub.yml",
+    "compose_sha256": "bfd84bc81af4e418adb5a9385c716715e9e9fbe169c0ece253f5a5a40d27c834",
+    "services": {
+      "slack-api": {
+        "image": "decodingtrustagent/slack:api-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "slack-ui": {
+        "image": "decodingtrustagent/slack:ui-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${SLACK_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "paypal": {
+    "compose_path": "dt_arena/envs/paypal/docker-compose-hub.yml",
+    "compose_sha256": "43e986065b6769736207865c26634a355153cfe46ef0641a2c2707d8c4b2d940",
+    "services": {
+      "paypal-pg": {
+        "image": "postgres:16",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "paypal-api": {
+        "image": "decodingtrustagent/paypal:api-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "paypal-ui": {
+        "image": "decodingtrustagent/paypal:ui-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${PAYPAL_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "calendar": {
+    "compose_path": "dt_arena/envs/calendar/docker-compose-hub.yml",
+    "compose_sha256": "37a7caac79f66a969b08d758b5fd05def392f0e22b323739518b9a17b107dade",
+    "services": {
+      "calendar-api": {
+        "image": "decodingtrustagent/google-calendar:api-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "calendar-ui": {
+        "image": "decodingtrustagent/google-calendar:ui-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${CALENDAR_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "zoom": {
+    "compose_path": "dt_arena/envs/zoom/docker-compose-hub.yml",
+    "compose_sha256": "847de1eb347d4dd319d1b55ae44a5748e6bbe1b125ad4921eba8af0a6a26b99a",
+    "services": {
+      "zoom-api": {
+        "image": "decodingtrustagent/zoom:api-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "zoom-ui": {
+        "image": "decodingtrustagent/zoom:ui-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${ZOOM_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "google-form": {
+    "compose_path": "dt_arena/envs/google-form/docker-compose-hub.yml",
+    "compose_sha256": "1359862e47557cf7c303e161e701827255dc3277afe6659edc7ea9964e6bc0e8",
+    "services": {
+      "form-api": {
+        "image": "decodingtrustagent/google-form:api-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "form-ui": {
+        "image": "decodingtrustagent/google-form:ui-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${GOOGLE_FORM_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "reddit": {
+    "compose_path": "dt_arena/envs/reddit/docker-compose.yml",
+    "compose_sha256": null,
+    "services": {},
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${REDDIT_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "googlesheets": {
+    "compose_path": "dt_arena/envs/googlesheets/docker-compose-hub.yml",
+    "compose_sha256": null,
+    "services": {},
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${GOOGLESHEETS_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "googledrive": {
+    "compose_path": "dt_arena/envs/googledrive/docker-compose-hub.yml",
+    "compose_sha256": null,
+    "services": {},
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${GOOGLEDRIVE_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "snowflake": {
+    "compose_path": "dt_arena/envs/snowflake/docker-compose-hub.yml",
+    "compose_sha256": "12f63712ae6df31907192d7771471d17a4d5b84a9a2c3667e7f5cfe289d5498c",
+    "services": {
+      "snowflake-pg": {
+        "image": "decodingtrustagent/snowflake:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "snowflake-admin": {
+        "image": "decodingtrustagent/snowflake:admin",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "admin": {
+        "url": "http://127.0.0.1:${SNOWFLAKE_ADMIN_PORT}/admin/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "databricks": {
+    "compose_path": "dt_arena/envs/databricks/docker-compose-hub.yml",
+    "compose_sha256": "28b988a49a6cfb7e94ab512175c5facab40948e8b49845143462a8f09c45410b",
+    "services": {
+      "databricks-pg": {
+        "image": "decodingtrustagent/databricks:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "databricks-admin": {
+        "image": "decodingtrustagent/databricks:admin",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "admin": {
+        "url": "http://127.0.0.1:${DATABRICKS_ADMIN_PORT}/admin/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "ers": {
+    "compose_path": "dt_arena/envs/ers/docker-compose.yml",
+    "compose_sha256": "7443d6874beb685b68005eae0cb78756f644bbb8fa5e04edc1ada2988ede677f",
+    "services": {
+      "mariadb": {
+        "image": "mariadb:10.8",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "redis": {
+        "image": "redis:alpine",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "frappe": {
+        "image": "frappe/bench:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {},
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "ecommerce": {
+    "compose_path": "dt_arena/envs/ecommerce/docker-compose.yml",
+    "compose_sha256": "853335a0bd5d6b6008dde23f1ef4dabfe0ad0e4869e9c3aeb447fb68ac3fc047",
+    "services": {
+      "shopping": {
+        "image": "decodingtrustagent/e-commerce:v1-slim",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {},
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "custom-website": {
+    "compose_path": "dt_arena/envs/custom-website/docker-compose.yml",
+    "compose_sha256": "943778a55fc12bbacad8347bc3224daa6e5afeda264eb2d3c7cc5f25fe5ccdfe",
+    "services": {
+      "website": {
+        "image": "decodingtrustagent/custom-website:v1",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {},
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "os-filesystem": {
+    "compose_path": "dt_arena/envs/os-filesystem/docker-compose-hub.yml",
+    "compose_sha256": "88a84bfafc73de229e3a3df78a420811e56ba904865fb7e0e153f8c21bdc0d23",
+    "services": {
+      "os-filesystem": {
+        "image": "decodingtrustagent/os-filesystem:filesystem",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${OS_FILESYSTEM_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "atlassian": {
+    "compose_path": "dt_arena/envs/atlassian/docker-compose-hub.yml",
+    "compose_sha256": "879ebd02d94e1adb9999f15449f82d00037f637ffcf0545593a38c623ec7bd75",
+    "services": {
+      "atlassian-pg": {
+        "image": "postgres:16",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "atlassian-api": {
+        "image": "decodingtrustagent/atlassian:api-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "atlassian-ui": {
+        "image": "decodingtrustagent/atlassian:ui-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {},
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "salesforce": {
+    "compose_path": "dt_arena/envs/salesforce_crm/docker-compose-hub.yaml",
+    "compose_sha256": "cd5f9444fd95f8b257b62d4348e417f6c8d563e6ac56e8c6cd062ad5acd1e48d",
+    "services": {
+      "mariadb": {
+        "image": "decodingtrustagent/salesforce-crm:mariadb",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "salesforce": {
+        "image": "decodingtrustagent/salesforce-crm:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "database": {
+        "url": "http://127.0.0.1:${SALESFORCE_API_PORT}/Api/V8/admin/reset-database",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "travel": {
+    "compose_path": "dt_arena/envs/travel/docker-compose.yml",
+    "compose_sha256": "a1a9eebf1514cbe3d1d1e943453c21e7a21acba621208a267e8ada73f7656de8",
+    "services": {
+      "travel-api": {
+        "image": "decodingtrustagent/travel:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${TRAVEL_PORT}/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "telecom": {
+    "compose_path": "dt_arena/envs/telecom/docker-compose-hub.yml",
+    "compose_sha256": "b3c4fb75b17efa90387ab6d61328c22501cc97e005a1c747297bb0bd9ca11af2",
+    "services": {
+      "telecom-server": {
+        "image": "decodingtrustagent/telecom:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${TELECOM_PORT}/reset_all",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "windows": {
+    "compose_path": "dt_arena/envs/windows/docker-compose.yml",
+    "compose_sha256": "58b6e9c3f68174f9d29a4e8fc169e764456cf7c731a5b6e762de86af9070d450",
+    "services": {
+      "windows-mcp": {
+        "image": "decodingtrustagent/windows",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "exfil-listener": {
+        "image": "python:3-slim",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "ftp-listener": {
+        "image": "python:3-slim",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "dns-listener": {
+        "image": "python:3-slim",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "mcp-healthcheck": {
+        "image": "curlimages/curl:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {},
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "hospital": {
+    "compose_path": "dt_arena/envs/hospital/docker-compose-hub.yml",
+    "compose_sha256": "8033a629e47f7bf3586ec13c3cec06e286c7a6dabf9218c3f983cbe105ff5d56",
+    "services": {
+      "hospital-server": {
+        "image": "decodingtrustagent/medical-service:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {},
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "finance": {
+    "compose_path": "dt_arena/envs/finance/docker-compose.yml",
+    "compose_sha256": "7349692de11b5e679809c462779aef53d174ab11adaa4880d5d493ca9f48cf39",
+    "services": {
+      "finance-web": {
+        "image": "decodingtrustagent/finance:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${FINANCE_WEB_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "telegram": {
+    "compose_path": "dt_arena/envs/telegram/docker-compose-hub.yml",
+    "compose_sha256": "182a6299b2e002d7c46bbb08e3b98590966ab3dd17c44b7b9ee5bfe5b5205aeb",
+    "services": {
+      "telegram-pg": {
+        "image": "decodingtrustagent/telegram:pg-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "telegram-api": {
+        "image": "decodingtrustagent/telegram:api-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${TELEGRAM_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "legal": {
+    "compose_path": "dt_arena/envs/legal/docker-compose.yml",
+    "compose_sha256": "6f13595de1c1bb6e0b9231f84107098dd21a33830c43e4c53615509893a8c3a3",
+    "services": {
+      "legal-web": {
+        "image": "decodingtrustagent/legal:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${LEGAL_WEB_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "macos": {
+    "compose_path": "dt_arena/envs/macos/docker-compose.yml",
+    "compose_sha256": "5f4a2838539a879853c8f5aa14a263bb9c2bc997d04eeff2d6d846568f360571",
+    "services": {
+      "macos-mcp": {
+        "image": "decodingtrustagent/macos",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "mcp-healthcheck": {
+        "image": "curlimages/curl:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "exfil-listener": {
+        "image": "python:3-slim",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "ftp-listener": {
+        "image": "python:3-slim",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "dns-listener": {
+        "image": "python:3-slim",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {},
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "github": {
+    "compose_path": "dt_arena/envs/github/docker/docker-compose-hub.yml",
+    "compose_sha256": null,
+    "services": {},
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${GITHUB_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "gitlab": {
+    "compose_path": "dt_arena/envs/gitlab/docker-compose-hub.yml",
+    "compose_sha256": null,
+    "services": {},
+    "reset_endpoints": {},
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "terminal": {
+    "compose_path": "dt_arena/envs/terminal/docker-compose-hub.yml",
+    "compose_sha256": "e8092c7dc911b1f71bd61d6371f1ee94d81bb27c8e746eefed091b10973d77dd",
+    "services": {
+      "terminal-env": {
+        "image": "decodingtrustagent/code-terminal:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {},
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "research": {
+    "compose_path": "dt_arena/envs/research/docker-compose-hub.yml",
+    "compose_sha256": "ed2b1370e0c23b21433532ed1f78aa94c384cd84eba639dad190e2a4799f6d78",
+    "services": {
+      "research-env": {
+        "image": "decodingtrustagent/research:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {},
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "whatsapp": {
+    "compose_path": "dt_arena/envs/whatsapp/docker-compose-hub.yml",
+    "compose_sha256": "1f1fd7725b38162f538c72adf07c3bcf73c29f7a51afec86912b571341df8336",
+    "services": {
+      "whatsapp-pg": {
+        "image": "decodingtrustagent/whatsapp:pg",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "whatsapp-api": {
+        "image": "decodingtrustagent/whatsapp:api-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "whatsapp-ui": {
+        "image": "decodingtrustagent/whatsapp:ui-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${WHATSAPP_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "googledocs": {
+    "compose_path": "dt_arena/envs/googledocs/docker-compose-hub.yml",
+    "compose_sha256": "67b484e7aff06bb20c2b8de98bff1a612ac283677098203080b62b8984a43be8",
+    "services": {
+      "googledocs-pg": {
+        "image": "decodingtrustagent/google-docs:db-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "googledocs-api": {
+        "image": "decodingtrustagent/google-docs:api-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "googledocs-ui": {
+        "image": "decodingtrustagent/google-docs:ui-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${GOOGLEDOCS_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "arxiv": {
+    "compose_path": "dt_arena/envs/arxiv/docker-compose-hub.yml",
+    "compose_sha256": "ea7ad76dccbb14e9c4aa6e3f560f5c864d98083b4519048004420739746dcceb",
+    "services": {
+      "arxiv-api": {
+        "image": "decodingtrustagent/arxiv:api-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "arxiv-ui": {
+        "image": "decodingtrustagent/arxiv:ui-latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${ARXIV_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "linkedin": {
+    "compose_path": "dt_arena/envs/linkedin/docker-compose.yml",
+    "compose_sha256": "b9a32648a7f6d007556075a245dc3d488cf4a546b169e30f0bc4a7e994593612",
+    "services": {
+      "linkedin-pg": {
+        "image": "postgres:14",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "linkedin-api": {
+        "image": null,
+        "build": {
+          "context": "./api",
+          "dockerfile": "Dockerfile"
+        },
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "linkedin-ui": {
+        "image": null,
+        "build": {
+          "context": "./linkedin_ui",
+          "dockerfile": "Dockerfile"
+        },
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${LINKEDIN_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "x": {
+    "compose_path": "dt_arena/envs/x/docker-compose.yml",
+    "compose_sha256": null,
+    "services": {},
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${X_API_PORT}/api/v1/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "bigquery": {
+    "compose_path": "dt_arena/envs/bigquery/docker-compose.yml",
+    "compose_sha256": "2ab453d8b15990051e2c052bb2649cadd511e9d2f83705f9af4c4037fc7ae126",
+    "services": {
+      "bigquery-emulator": {
+        "image": "ghcr.io/goccy/bigquery-emulator:latest",
+        "build": null,
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {},
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "chase": {
+    "compose_path": "dt_arena/envs/chase/docker-compose.yml",
+    "compose_sha256": null,
+    "services": {},
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${CHASE_API_PORT}/admin/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "robinhood": {
+    "compose_path": "dt_arena/envs/robinhood/docker-compose.yml",
+    "compose_sha256": null,
+    "services": {},
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${ROBINHOOD_API_PORT}/admin/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "booking": {
+    "compose_path": "dt_arena/envs/booking/docker-compose.yml",
+    "compose_sha256": "383cd08059eb9d416455593516dbef665f221fa3bf4bbd550b883f3030105666",
+    "services": {
+      "booking-pg": {
+        "image": null,
+        "build": {
+          "context": ".",
+          "dockerfile": "Dockerfile.pg"
+        },
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      },
+      "booking-api": {
+        "image": null,
+        "build": {
+          "context": ".",
+          "dockerfile": "Dockerfile.api"
+        },
+        "image_digest_status": "NOT_PINNED_RUNTIME_REVIEW_REQUIRED"
+      }
+    },
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${BOOKING_API_PORT}/admin/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "doordash": {
+    "compose_path": "dt_arena/envs/doordash/docker-compose.yml",
+    "compose_sha256": null,
+    "services": {},
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${DOORDASH_API_PORT}/admin/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "expedia": {
+    "compose_path": "dt_arena/envs/expedia/docker-compose.yml",
+    "compose_sha256": null,
+    "services": {},
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${EXPEDIA_API_PORT}/admin/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "southwest": {
+    "compose_path": "dt_arena/envs/southwest/docker-compose.yml",
+    "compose_sha256": null,
+    "services": {},
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${SOUTHWEST_API_PORT}/admin/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  },
+  "united": {
+    "compose_path": "dt_arena/envs/united/docker-compose.yml",
+    "compose_sha256": null,
+    "services": {},
+    "reset_endpoints": {
+      "api": {
+        "url": "http://127.0.0.1:${UNITED_API_PORT}/admin/reset",
+        "method": "POST"
+      }
+    },
+    "additional_llm_calls": "TRANSITIVE_RUNTIME_REVIEW_REQUIRED"
+  }
+}

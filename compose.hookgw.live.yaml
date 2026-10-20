@@ -1,0 +1,18 @@
+# USER-ONLY opt-in. Starting the service does not submit a model request.
+# Candidate checks debit the EXISTING 12/24 ledger. No separate/reset budget.
+services:
+  control:
+    environment:
+      HOOKGW_USER_LIVE: "1"
+      JUDGE_BUDGET_DB_PATH: /legacy-budget/judge-budget.sqlite3
+    volumes:
+      - legacy-f3-budget:/legacy-budget
+      - type: bind
+        source: ./artifacts/runtime-f3-01/control/judge.api-key
+        target: /runtime/judge.api-key
+        read_only: true
+        bind: {create_host_path: false}
+volumes:
+  legacy-f3-budget:
+    external: true
+    name: with-human-f3_f3-control

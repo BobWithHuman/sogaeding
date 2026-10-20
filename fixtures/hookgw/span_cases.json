@@ -1,0 +1,12 @@
+{
+  "kind": "SYNTHETIC_REQUEST_AND_WRAPPER_CASES_NOT_RECOVERED_MODEL_RESPONSE",
+  "normal_request": "with_human으로 fixtures/hookgw/notes.txt를 읽고 요약을 fixtures/hookgw/normal-output.txt에 써줘. 마지막 줄에 WP-HOOK-GW-02-user-20261016-01을 넣어줘.",
+  "texts": [
+    "한국어 요청과 후속 사용자 turn",
+    "C:\\sogaeding\\문서\\notes.txt: \\\"인용\\\"",
+    "첫 줄\r\n두 번째 줄\r\n",
+    "상태 😀🚀 완료 — 정상 자료",
+    "같은 구절 / 같은 구절 / 같은 구절",
+    "{\"actual_user_turns_chronological\":[\"자료를 읽어줘\",\"그 사실로 요약해줘\"],\"latest_turn\":1}"
+  ]
+}

@@ -1,0 +1,2669 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "인과함께 MVP Control/PDP API",
+    "version": "MVP-SPEC-4",
+    "description": "Local development control API. MCP is on port 8001 and specified separately; no complete OAuth interoperability claim. All business data authenticated. Specs are not implemented/tested yet."
+  },
+  "servers": [
+    {
+      "url": "https://127.0.0.1:8000"
+    }
+  ],
+  "x-max-request-bytes": 32768,
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "health",
+        "summary": "Generic service liveness only",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Process alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions": {
+      "post": {
+        "operationId": "createSession",
+        "tags": [
+          "User"
+        ],
+        "summary": "Create structured human task/session; return raw agent token once",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See the state contract; success response is not itself an execution permit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCreated"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "401: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "403: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "404: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "409: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "413: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "422: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "503: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{session_id}/close": {
+      "post": {
+        "operationId": "closeSession",
+        "tags": [
+          "User"
+        ],
+        "summary": "Close session; further tools/reserve denied",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See the state contract; success response is not itself an execution permit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionClosed"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "401: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "403: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "404: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "409: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "413: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "422: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "503: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Empty"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/timeline": {
+      "get": {
+        "operationId": "getTimeline",
+        "tags": [
+          "User"
+        ],
+        "summary": "Safe session-scoped audit view; no tokens",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See the state contract; success response is not itself an execution permit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionTimeline"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "401: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "403: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "404: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "409: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "413: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "422: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "503: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/approvals/{approval_id}/approve": {
+      "post": {
+        "operationId": "approveCall",
+        "tags": [
+          "User"
+        ],
+        "summary": "Approve exact CONFIRM call; does not execute",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See the state contract; success response is not itself an execution permit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "401: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "403: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "404: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "409: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "413: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "422: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "503: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/approvals/{approval_id}/reject": {
+      "post": {
+        "operationId": "rejectCall",
+        "tags": [
+          "User"
+        ],
+        "summary": "Reject pending confirmation",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See the state contract; success response is not itself an execution permit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "401: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "403: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "404: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "409: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "413: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "422: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "503: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Empty"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/internal/auth/resolve": {
+      "post": {
+        "operationId": "resolveAgentToken",
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Verify opaque agent session token; do not log body",
+        "security": [
+          {
+            "GatewayServiceBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See the state contract; success response is not itself an execution permit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthContext"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "401: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "403: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "404: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "409: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "413: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "422: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "503: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthResolve"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/checks": {
+      "post": {
+        "operationId": "checkCall",
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Create immutable call or validate resume; no executor effect",
+        "security": [
+          {
+            "GatewayServiceBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See the state contract; success response is not itself an execution permit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "401: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "403: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "404: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "409: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "413: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "422: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "503: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/sources": {
+      "post": {
+        "operationId": "ingestSource",
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Ingest masked read snapshot; reject user-trust source kind",
+        "security": [
+          {
+            "GatewayServiceBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See the state contract; success response is not itself an execution permit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "401: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "403: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "404: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "409: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "413: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "422: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "503: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceIngest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/calls/{call_id}/reserve": {
+      "post": {
+        "operationId": "reserveExecution",
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Atomically consume approval/write budget; execute only when true",
+        "security": [
+          {
+            "GatewayServiceBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See the state contract; success response is not itself an execution permit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservationReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "401: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "403: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "404: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "409: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "413: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "422: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "503: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReserveRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "call_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/internal/calls/{call_id}/report": {
+      "post": {
+        "operationId": "reportExecution",
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Idempotent result report; UNKNOWN requires explicit reconciliation",
+        "security": [
+          {
+            "GatewayServiceBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See the state contract; success response is not itself an execution permit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "401: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "403: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "404: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "409: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "413: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "422: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "503: authenticated, scoped, bounded failure; no secret details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "call_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/diagnostics": {
+      "get": {
+        "summary": "Authenticated local user diagnostic/connection read; no tool or model execution",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Safe metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisDiagnostics"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/cli-binding": {
+      "post": {
+        "summary": "Authenticated local user diagnostic/connection read; no tool or model execution",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Safe metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisDiagnostics"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CliBindingRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/judge-usage": {
+      "get": {
+        "summary": "Authenticated local user diagnostic/connection read; no tool or model execution",
+        "security": [
+          {
+            "UserBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Safe metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JudgeUsage"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "UserBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque local human user token"
+      },
+      "GatewayServiceBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque local service token"
+      }
+    },
+    "schemas": {
+      "Empty": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "Health": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "ok",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "SessionCreate": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "task_kind": {
+                "const": "SUMMARIZE_ISSUE",
+                "type": "string"
+              },
+              "user_request": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "issue_id": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "task_kind",
+              "user_request",
+              "issue_id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "task_kind": {
+                "const": "POST_COMMENT",
+                "type": "string"
+              },
+              "user_request": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "issue_id": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "allowed_comment_body": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "comment_mode": {
+                "type": "string",
+                "const": "EXACT",
+                "default": "EXACT"
+              }
+            },
+            "required": [
+              "task_kind",
+              "user_request",
+              "issue_id",
+              "allowed_comment_body"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "task_kind": {
+                "const": "POST_COMMENT",
+                "type": "string"
+              },
+              "user_request": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "issue_id": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "comment_mode": {
+                "type": "string",
+                "const": "ISSUE_SUMMARY"
+              }
+            },
+            "required": [
+              "task_kind",
+              "user_request",
+              "issue_id",
+              "comment_mode"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "SessionCreated": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "task_kind": {
+            "type": "string",
+            "enum": [
+              "SUMMARIZE_ISSUE",
+              "POST_COMMENT"
+            ]
+          },
+          "policy_version": {
+            "const": "mvp-2026-10-13-v1",
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "agent_session_token": {
+            "type": "string",
+            "minLength": 32,
+            "readOnly": true,
+            "description": "One-time authorized human user response; never returned in later views."
+          }
+        },
+        "required": [
+          "session_id",
+          "task_kind",
+          "policy_version",
+          "expires_at",
+          "agent_session_token"
+        ],
+        "additionalProperties": false
+      },
+      "SessionClosed": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "CLOSED",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "ApprovalRequest": {
+        "type": "object",
+        "properties": {
+          "expected_args_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "expected_args_sha256"
+        ],
+        "additionalProperties": false
+      },
+      "ApprovalView": {
+        "type": "object",
+        "properties": {
+          "approval_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "call_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "args_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "policy_version": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "CONSUMED",
+              "EXPIRED",
+              "REJECTED"
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "approval_id",
+          "call_id",
+          "args_sha256",
+          "policy_version",
+          "status",
+          "expires_at"
+        ],
+        "additionalProperties": false
+      },
+      "AuthResolve": {
+        "type": "object",
+        "properties": {
+          "agent_token": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 512,
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "agent_token"
+        ],
+        "additionalProperties": false
+      },
+      "AuthContext": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "owner_id": {
+            "type": "string"
+          },
+          "audience": {
+            "const": "https://127.0.0.1:8001/mcp",
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "const": "tools:invoke",
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 1
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "session_id",
+          "owner_id",
+          "audience",
+          "scopes",
+          "expires_at"
+        ],
+        "additionalProperties": false
+      },
+      "CheckRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "client_request_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "resume_call_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "tool_name": {
+                "const": "get_issue",
+                "type": "string"
+              },
+              "backend_id": {
+                "const": "demo.v1",
+                "type": "string"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "issue_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "issue_id"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "session_id",
+              "client_request_id",
+              "tool_name",
+              "backend_id",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "client_request_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "resume_call_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "tool_name": {
+                "const": "read_workspace_file",
+                "type": "string"
+              },
+              "backend_id": {
+                "const": "demo.v1",
+                "type": "string"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "file_id": {
+                    "type": "string",
+                    "enum": [
+                      "PUBLIC_README",
+                      "SECRET_ENV"
+                    ]
+                  }
+                },
+                "required": [
+                  "file_id"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "session_id",
+              "client_request_id",
+              "tool_name",
+              "backend_id",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "client_request_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "resume_call_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "tool_name": {
+                "const": "post_issue_comment",
+                "type": "string"
+              },
+              "backend_id": {
+                "const": "demo.v1",
+                "type": "string"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "issue_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "required": [
+                  "issue_id",
+                  "body"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "session_id",
+              "client_request_id",
+              "tool_name",
+              "backend_id",
+              "args"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CheckReply": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "ALLOW",
+              "DENY",
+              "CONFIRM"
+            ]
+          },
+          "args_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "policy_version": {
+            "type": "string"
+          },
+          "reason_codes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "VALID_TASK_CALL",
+                "EXACT_USER_CONTENT",
+                "OUTSIDE_TASK_SCOPE",
+                "RESOURCE_OUT_OF_SCOPE",
+                "SENSITIVE_RESOURCE",
+                "SENSITIVE_DATA_IN_ARGUMENTS",
+                "CONTENT_REVIEW_REQUIRED",
+                "SOURCE_VALUE_OBSERVED",
+                "AUTH_REQUIRED",
+                "SESSION_INACTIVE",
+                "UNSUPPORTED_TOOL",
+                "INVALID_ARGUMENTS",
+                "TASK_CALL_BUDGET_EXHAUSTED",
+                "TASK_WRITE_BUDGET_EXHAUSTED",
+                "PDP_UNAVAILABLE",
+                "AUDIT_UNAVAILABLE",
+                "REQUEST_KEY_CONFLICT",
+                "ACTION_BINDING_MISMATCH",
+                "POLICY_CHANGED",
+                "APPROVAL_PENDING",
+                "APPROVAL_EXPIRED",
+                "APPROVAL_REJECTED",
+                "APPROVAL_CONSUMED",
+                "EXECUTION_IN_PROGRESS",
+                "EXECUTION_ALREADY_SUCCEEDED",
+                "EXECUTION_FAILED",
+                "EXECUTION_OUTCOME_UNKNOWN",
+                "USER_INTENT_SUPPORTED",
+                "TASK_DATA_SUPPORTED",
+                "EXTERNAL_INSTRUCTION_DEPENDENCY",
+                "SEMANTIC_UNCERTAIN",
+                "SOURCE_CONTEXT_MISSING",
+                "SOURCE_CONTEXT_INCOMPLETE",
+                "ANALYSIS_UNAVAILABLE",
+                "ANALYSIS_IN_PROGRESS",
+                "ANALYSIS_STALE"
+              ]
+            },
+            "minItems": 1
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 16
+          },
+          "approval_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "approval_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "CONSUMED",
+              "EXPIRED",
+              "REJECTED",
+              null
+            ]
+          },
+          "execution_state": {
+            "type": "string",
+            "enum": [
+              "NOT_STARTED",
+              "RESERVED",
+              "SUCCEEDED",
+              "FAILED",
+              "UNKNOWN"
+            ]
+          },
+          "analysis_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "decision_stage": {
+            "type": "string",
+            "enum": [
+              "POLICY",
+              "SOURCE",
+              "SEMANTIC"
+            ]
+          },
+          "evidence_snapshot_sha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            }
+          }
+        },
+        "required": [
+          "call_id",
+          "decision",
+          "args_sha256",
+          "policy_version",
+          "reason_codes",
+          "source_ids",
+          "execution_state"
+        ],
+        "additionalProperties": false
+      },
+      "SourceIngest": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "EXTERNAL",
+              "WORKSPACE_DATA"
+            ]
+          },
+          "origin_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "content_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "masked_excerpt": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "match_values": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "maxItems": 16
+          },
+          "analysis_text": {
+            "type": "string",
+            "maxLength": 8192
+          },
+          "analysis_text_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "analysis_complete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "call_id",
+          "kind",
+          "origin_ref",
+          "content_sha256",
+          "masked_excerpt",
+          "match_values"
+        ],
+        "additionalProperties": false
+      },
+      "SourceView": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "call_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "USER_REQUEST",
+              "EXTERNAL",
+              "WORKSPACE_DATA"
+            ]
+          },
+          "origin_ref": {
+            "type": "string"
+          },
+          "content_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "masked_excerpt": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "collected_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "source_id",
+          "session_id",
+          "call_id",
+          "kind",
+          "origin_ref",
+          "content_sha256",
+          "masked_excerpt",
+          "collected_at"
+        ],
+        "additionalProperties": false
+      },
+      "ReserveRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "tool_name": {
+                "const": "get_issue",
+                "type": "string"
+              },
+              "backend_id": {
+                "const": "demo.v1",
+                "type": "string"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "issue_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "issue_id"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool_name",
+              "backend_id",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool_name": {
+                "const": "read_workspace_file",
+                "type": "string"
+              },
+              "backend_id": {
+                "const": "demo.v1",
+                "type": "string"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "file_id": {
+                    "type": "string",
+                    "enum": [
+                      "PUBLIC_README",
+                      "SECRET_ENV"
+                    ]
+                  }
+                },
+                "required": [
+                  "file_id"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool_name",
+              "backend_id",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool_name": {
+                "const": "post_issue_comment",
+                "type": "string"
+              },
+              "backend_id": {
+                "const": "demo.v1",
+                "type": "string"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "issue_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "required": [
+                  "issue_id",
+                  "body"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "tool_name",
+              "backend_id",
+              "args"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Receipt": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tool_name": {
+            "type": "string",
+            "enum": [
+              "get_issue",
+              "read_workspace_file",
+              "post_issue_comment"
+            ]
+          },
+          "executor_invocations": {
+            "const": 1,
+            "type": "integer"
+          },
+          "write_count_for_call": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "effect_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "comment_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "call_id",
+          "session_id",
+          "tool_name",
+          "executor_invocations",
+          "write_count_for_call",
+          "effect_digest"
+        ],
+        "additionalProperties": false
+      },
+      "ReservationReply": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "execute": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "RESERVED",
+              "SUCCEEDED"
+            ]
+          },
+          "reservation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "start_before": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "receipt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Receipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "call_id",
+          "execute",
+          "state",
+          "reservation_id"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "execute": {
+                  "const": true
+                }
+              },
+              "required": [
+                "execute"
+              ]
+            },
+            "then": {
+              "properties": {
+                "state": {
+                  "const": "RESERVED"
+                },
+                "reservation_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "required": [
+                "start_before"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "execute": {
+                  "const": false
+                }
+              },
+              "required": [
+                "execute"
+              ]
+            },
+            "then": {
+              "properties": {
+                "state": {
+                  "const": "SUCCEEDED"
+                }
+              },
+              "required": [
+                "receipt"
+              ]
+            }
+          }
+        ]
+      },
+      "ReportRequest": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "SUCCEEDED",
+              "FAILED",
+              "UNKNOWN"
+            ]
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/Receipt"
+          },
+          "error_code": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "reconciled": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "reservation_id",
+          "state"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "SUCCEEDED"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "required": [
+                "receipt"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "FAILED"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "required": [
+                "error_code"
+              ]
+            }
+          }
+        ]
+      },
+      "ExecutionView": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "NOT_STARTED",
+              "RESERVED",
+              "SUCCEEDED",
+              "FAILED",
+              "UNKNOWN"
+            ]
+          },
+          "receipt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Receipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "call_id",
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "TimelineEvent": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "call_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "safe_payload": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "event_id",
+          "kind",
+          "created_at",
+          "safe_payload"
+        ],
+        "additionalProperties": false
+      },
+      "SessionTimeline": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "task_kind": {
+            "type": "string",
+            "enum": [
+              "SUMMARIZE_ISSUE",
+              "POST_COMMENT"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "EXPIRED",
+              "CLOSED"
+            ]
+          },
+          "policy_version": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceView"
+            }
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CheckReply"
+            }
+          },
+          "approvals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApprovalView"
+            }
+          },
+          "executions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExecutionView"
+            }
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimelineEvent"
+            }
+          }
+        },
+        "required": [
+          "session_id",
+          "task_kind",
+          "status",
+          "policy_version",
+          "sources",
+          "checks",
+          "approvals",
+          "executions",
+          "events"
+        ],
+        "additionalProperties": false
+      },
+      "EvidenceRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "view": {
+            "type": "string",
+            "enum": [
+              "A",
+              "B"
+            ]
+          },
+          "source_id": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1
+          }
+        },
+        "required": [
+          "view",
+          "source_id",
+          "start",
+          "end",
+          "quote"
+        ]
+      },
+      "CliBindingRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "agent_session_token": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "agent_session_token"
+        ]
+      },
+      "AnalysisDiagnostics": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "task_kind": {
+            "type": "string"
+          },
+          "issue_id": {
+            "type": "integer"
+          },
+          "comment_mode": {
+            "type": "string"
+          },
+          "policy_version": {
+            "type": "string"
+          },
+          "request_sha256": {
+            "type": "string"
+          },
+          "analyses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "analysis_id": {
+                  "type": "string"
+                },
+                "call_id": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "PENDING",
+                    "COMPLETE"
+                  ]
+                },
+                "diagnostics": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "type": "string",
+                        "enum": [
+                          "ADAPTER_ERROR",
+                          "ANALYSIS_CANCELLED",
+                          "API_AUTHENTICATION",
+                          "API_CONNECTION",
+                          "API_ERROR",
+                          "API_RATE_LIMIT",
+                          "API_TIMEOUT",
+                          "A_EXTERNAL_SOURCE",
+                          "A_EXTERNAL_USE",
+                          "B_EXTERNAL_EVIDENCE_REQUIRED",
+                          "B_SAME_ISSUE_REQUIRED",
+                          "DETAIL_NOT_RECORDED",
+                          "EVIDENCE_REQUIRED",
+                          "INPUT_CONTEXT_LIMIT",
+                          "INVALID_JSON",
+                          "INVALID_SCHEMA",
+                          "JUDGE_NOT_CONFIGURED",
+                          "LEASE_EXPIRED",
+                          "MISSING_API_KEY",
+                          "MODEL_REFUSAL",
+                          "PAIR_DEADLINE",
+                          "QUOTE_BOUNDS",
+                          "QUOTE_MISMATCH",
+                          "REQUEST_BUDGET_EXHAUSTED",
+                          "RESPONSE_INCOMPLETE",
+                          "RESULT_PAIR_INVALID",
+                          "SENSITIVE_QUOTE",
+                          "SNAPSHOT_STALE",
+                          "UNEXPECTED_OUTPUT",
+                          "UNKNOWN_SOURCE"
+                        ]
+                      },
+                      "view": {
+                        "type": "string",
+                        "enum": [
+                          "A",
+                          "B",
+                          "PAIR",
+                          "SERVER"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "view"
+                    ]
+                  },
+                  "maxItems": 2
+                }
+              },
+              "required": [
+                "analysis_id",
+                "call_id",
+                "status",
+                "diagnostics"
+              ]
+            }
+          }
+        },
+        "required": [
+          "session_id",
+          "task_kind",
+          "issue_id",
+          "comment_mode",
+          "policy_version",
+          "request_sha256",
+          "analyses"
+        ]
+      },
+      "JudgeUsage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "requests_attempted": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remaining": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "const": 24
+          },
+          "recorded_usage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "input_tokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "output_tokens": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "input_tokens",
+              "output_tokens"
+            ]
+          }
+        },
+        "required": [
+          "requests_attempted",
+          "remaining",
+          "limit"
+        ]
+      }
+    }
+  },
+  "x-f3-limits": {
+    "source_text_chars": 8192,
+    "source_text_utf8_bytes": 16384,
+    "source_count": 8,
+    "context_chars": 16384,
+    "context_utf8_bytes": 32768,
+    "judge_requests_per_candidate": 2,
+    "semantic_candidates_per_session": 2,
+    "judge_request_timeout_seconds": 15,
+    "judge_deadline_seconds": 20,
+    "check_client_timeout_seconds": 25,
+    "tool_deadline_seconds": 35,
+    "policy": "mvp-2026-10-14-f3-v2"
+  }
+}

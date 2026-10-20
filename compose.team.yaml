@@ -1,0 +1,105 @@
+name: sogaeding-team
+
+x-app: &app
+  image: sogaeding-team-dev:local
+  user: "10001:10001"
+  working_dir: /product
+  read_only: true
+  init: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: ["/tmp:size=128m,mode=1777"]
+  pids_limit: 128
+  mem_limit: 512m
+  environment: &environment
+    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONPATH: /product/src
+    CONTRACT_DIR: /product/contracts
+    HOOKGW_RUNTIME: /runtime
+    RUNTIME_DIR: /runtime
+  networks: [protected]
+
+services:
+  control:
+    <<: *app
+    command: [python, -m, app.transparent.server]
+    ports: ["127.0.0.1:${SOGAEDING_CONTROL_PORT:-8130}:8030"]
+    networks: [protected, ingress]
+    environment:
+      <<: *environment
+      HOOKGW_PDP: JEV
+      HOOKGW_JEV_PROFILE: current_candidate_1
+      HOOKGW_USER_LIVE: "0"
+      HOOKGW_DEMO_VIEWER: "1"
+      JEV_POLICY_FILE: /not-mounted/policy.json
+    volumes:
+      - ./src:/product/src:ro
+      - ./docs/mvp/contracts:/product/contracts:ro
+      - type: volume
+        source: team-runtime
+        target: /runtime
+        read_only: true
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/control"}
+      - type: volume
+        source: team-runtime
+        target: /data
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/control-data"}
+  upstream:
+    <<: *app
+    command: [python, -m, app.transparent.upstream]
+    volumes:
+      - ./src:/product/src:ro
+      - ./docs/mvp/contracts:/product/contracts:ro
+      - type: volume
+        source: team-runtime
+        target: /runtime
+        read_only: true
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/upstream"}
+      - type: volume
+        source: team-runtime
+        target: /data
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/upstream-data"}
+      - type: volume
+        source: team-runtime
+        target: /files
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/workspace"}
+  gateway:
+    image: cr.agentgateway.dev/agentgateway@sha256:9d3e6044ddcdc0878b1787f77bd401252b95e22684203fb5e874c4c42d2ed90c
+    command: [-f, /config/config.yaml]
+    user: "10001:10001"
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    pids_limit: 128
+    mem_limit: 512m
+    ports: ["127.0.0.1:${SOGAEDING_GATEWAY_PORT:-8140}:8040"]
+    networks: [protected, ingress]
+    volumes:
+      - ./agentgateway:/config:ro
+      - type: volume
+        source: team-runtime
+        target: /runtime
+        read_only: true
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/gateway"}
+    depends_on: [control, upstream]
+  check:
+    <<: *app
+    profiles: [verification]
+    command: [python, /tools/team_runtime.py, check, "/team/artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}"]
+    volumes:
+      - ./tools:/tools:ro
+      - team-runtime:/team:ro
+
+volumes:
+  team-runtime:
+    external: true
+    name: "${SOGAEDING_TEAM_VOLUME:?Run scripts/team_dev.ps1 prepare first}"
+
+networks:
+  protected:
+    internal: true
+    ipam: {config: [{subnet: "${SOGAEDING_PROTECTED_SUBNET:-10.253.240.0/24}"}]}
+  ingress:
+    ipam: {config: [{subnet: "${SOGAEDING_INGRESS_SUBNET:-10.253.241.0/24}"}]}

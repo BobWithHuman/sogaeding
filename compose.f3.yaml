@@ -1,0 +1,73 @@
+name: with-human-f3
+x-app: &app
+  image: with-human-dev:local
+  user: "10001:10001"
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: ["/tmp:size=128m,mode=1777"]
+  pids_limit: 128
+  mem_limit: 1g
+  networks: [private, ingress]
+  environment: &env
+    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONUNBUFFERED: "1"
+    PYTHONPATH: /workspace/src
+    CONTRACT_DIR: /workspace/docs/mvp/contracts
+    RUNTIME_DIR: /runtime
+    CONTROL_PORT: "8020"
+  working_dir: /workspace
+services:
+  control:
+    <<: *app
+    command: [python, -m, app.control.serve]
+    environment:
+      <<: *env
+      CONTROL_DB_PATH: /data/control.sqlite3
+      WITH_HUMAN_JUDGE_MODEL: gpt-5.6-luna
+      JUDGE_BUDGET_DB_PATH: /data/judge-budget.sqlite3
+    ports: ["127.0.0.1:8020:8020"]
+    volumes:
+      - ./src:/workspace/src:ro
+      - ./docs/mvp/contracts:/workspace/docs/mvp/contracts:ro
+      - ./artifacts/runtime-f3-01/control:/runtime:ro
+      - f3-control:/data
+  gateway:
+    <<: *app
+    command: [python, -m, app.gateway.main]
+    environment:
+      <<: *env
+      CONTROL_BASE_URL: https://control:8443
+      EFFECTS_DB_PATH: /data/effects.sqlite3
+      GATEWAY_PORT: "8021"
+      FIXTURE_DIR: /fixtures
+    ports: ["127.0.0.1:8021:8021"]
+    volumes:
+      - ./src:/workspace/src:ro
+      - ./docs/mvp/contracts:/workspace/docs/mvp/contracts:ro
+      - ./artifacts/runtime-f3-01/gateway:/runtime:ro
+      - ./artifacts/runtime-f3-01/fixtures:/fixtures:ro
+      - f3-effects:/data
+  driver:
+    <<: *app
+    profiles: [test]
+    command: [python, tools/f3_driver.py]
+    networks: [private]
+    environment:
+      <<: *env
+      RUNTIME_DIR: /test-runtime
+    volumes:
+      - ./src:/workspace/src:ro
+      - ./tools:/workspace/tools:ro
+      - ./docs/mvp/contracts:/workspace/docs/mvp/contracts:ro
+      - ./artifacts/runtime-f3-01/driver:/test-runtime:ro
+      - ./artifacts/runtime-f3-01/fixtures:/fixtures
+      - f3-control:/control-data
+      - f3-effects:/effects-data
+networks:
+  private: {internal: true}
+  ingress: {}
+volumes:
+  f3-control:
+  f3-effects:

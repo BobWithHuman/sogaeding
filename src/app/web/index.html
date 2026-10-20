@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>With Human · 실행 확인</title>
+<style>body{font:16px system-ui;max-width:960px;margin:40px auto;padding:0 20px;background:#f6f7fb;color:#172039}input,textarea,select,button{font:inherit;padding:8px;margin:5px;border:1px solid #cad1df;border-radius:6px}textarea{width:90%}section{background:white;border:1px solid #dce1eb;padding:18px;margin:18px 0;border-radius:10px}pre{white-space:pre-wrap;overflow-wrap:anywhere}button{cursor:pointer;background:#e7ecff}h1{font-size:28px}</style>
+<h1>With Human</h1><p>사용자 요청, 실행 판정, 승인과 실제 효과를 확인합니다. 로컬 모의 이슈와 등록된 MCP 세 도구를 보호합니다.</p>
+<section><label>사용자 토큰 <input id="token" type="password" autocomplete="off"></label><p>이 화면의 메모리에서만 사용합니다.</p></section>
+<section><h2>작업 시작</h2><select id="kind"><option value="SUMMARIZE_ISSUE">이슈 요약</option><option value="POST_COMMENT">댓글 작성</option></select><label>댓글 권한 <select id="mode"><option value="EXACT">정확한 본문</option><option value="ISSUE_SUMMARY">이슈 요약 댓글 1회 · 자동 판정</option></select></label><label>이슈 <input id="issue" type="number" value="42" min="1"></label><textarea id="request" placeholder="원래 작업 요청"></textarea><textarea id="body" placeholder="댓글 작성에서 허용한 정확한 본문"></textarea><button id="create">세션 만들기</button><p id="created"></p><label>발급된 에이전트 토큰 (한 번 제공) <input id="agent" type="password" readonly autocomplete="off"></label></section>
+<section><h2>이력 조회</h2><label>세션 ID <input id="session" size="40"></label><button id="load">조회</button><p id="status" role="status"></p><div id="timeline"></div></section>
+<script src="/ui.js" defer></script></html>

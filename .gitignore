@@ -1,0 +1,41 @@
+# Local credentials and runtime state
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+data/
+artifacts/
+tmp/
+harness/runtime/
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+auth.json
+*.pem
+*.key
+
+# Supplied documents and derived copies remain local
+references/originals/
+references/extracted/
+references/visuals/
+
+# Editor/OS state
+.DS_Store
+Thumbs.db
+.vscode/
+runtime/
+
+# Host-generated caches and credentials are never repository source.
+/%SystemDrive%/
+*.token
+*.api-key
+*.pfx
+*.p12
+*.zip
+*.tar
+*.tar.gz
+node_modules/

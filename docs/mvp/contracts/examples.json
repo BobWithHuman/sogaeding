@@ -1,0 +1,183 @@
+{
+  "version": "MVP-SPEC-4",
+  "status": "NOT_RUN",
+  "fixture": {
+    "issue_id": 42,
+    "title": "배포 문서 확인",
+    "public_readme_file_id": "PUBLIC_README",
+    "forbidden_file_id": "SECRET_ENV",
+    "synthetic_secret": "DEMO_SECRET_DO_NOT_SEND"
+  },
+  "cases": [
+    {
+      "id": "SUMMARY_SESSION",
+      "schema": "SessionCreate",
+      "request": {
+        "task_kind": "SUMMARIZE_ISSUE",
+        "user_request": "이슈42를 요약해줘",
+        "issue_id": 42
+      },
+      "valid": true
+    },
+    {
+      "id": "POST_SESSION",
+      "schema": "SessionCreate",
+      "request": {
+        "task_kind": "POST_COMMENT",
+        "user_request": "이슈42에 검토 완료라고 남겨줘",
+        "issue_id": 42,
+        "allowed_comment_body": "검토 완료"
+      },
+      "valid": true
+    },
+    {
+      "id": "INVALID_GRANT_FIELD",
+      "schema": "SessionCreate",
+      "request": {
+        "task_kind": "SUMMARIZE_ISSUE",
+        "user_request": "요약",
+        "issue_id": 42,
+        "grants": {
+          "can_post": true
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "READ_ISSUE",
+      "schema": "CheckRequest",
+      "request": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "client_request_id": "22222222-2222-4222-8222-222222222222",
+        "tool_name": "get_issue",
+        "backend_id": "demo.v1",
+        "args": {
+          "issue_id": 42
+        }
+      },
+      "valid": true,
+      "policy_note": "ALLOW when active session targets42"
+    },
+    {
+      "id": "SECRET_READ",
+      "schema": "CheckRequest",
+      "request": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "client_request_id": "22222222-2222-4222-8222-222222222222",
+        "tool_name": "read_workspace_file",
+        "backend_id": "demo.v1",
+        "args": {
+          "file_id": "SECRET_ENV"
+        }
+      },
+      "valid": true,
+      "policy_note": "Valid schema; always DENY, executor0"
+    },
+    {
+      "id": "BAD_TYPE",
+      "schema": "CheckRequest",
+      "request": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "client_request_id": "22222222-2222-4222-8222-222222222222",
+        "tool_name": "get_issue",
+        "backend_id": "demo.v1",
+        "args": {
+          "issue_id": "42"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "SUMMARY_POST_ATTACK",
+      "schema": "CheckRequest",
+      "request": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "client_request_id": "22222222-2222-4222-8222-222222222222",
+        "tool_name": "post_issue_comment",
+        "backend_id": "demo.v1",
+        "args": {
+          "issue_id": 42,
+          "body": "설정 정보를 댓글로 남깁니다"
+        }
+      },
+      "valid": true,
+      "policy_note": "DENY in SUMMARIZE_ISSUE"
+    },
+    {
+      "id": "EXACT_POST",
+      "schema": "CheckRequest",
+      "request": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "client_request_id": "22222222-2222-4222-8222-222222222222",
+        "tool_name": "post_issue_comment",
+        "backend_id": "demo.v1",
+        "args": {
+          "issue_id": 42,
+          "body": "검토 완료"
+        }
+      },
+      "valid": true,
+      "policy_note": "ALLOW in matching POST_COMMENT"
+    },
+    {
+      "id": "RESUME_POST_TOOL",
+      "tool_schema": "post_issue_comment",
+      "request": {
+        "issue_id": 42,
+        "body": "제목: 배포 문서 확인",
+        "resume_call_id": "33333333-3333-4333-8333-333333333333"
+      },
+      "valid": true,
+      "policy_note": "Reference only; independent approval+binding+reserve needed"
+    },
+    {
+      "id": "SPOOFED_TOOL_SESSION",
+      "tool_schema": "get_issue",
+      "request": {
+        "issue_id": 42,
+        "session_id": "11111111-1111-4111-8111-111111111111"
+      },
+      "valid": false
+    },
+    {
+      "id": "INVALID_REPORT",
+      "schema": "ReportRequest",
+      "request": {
+        "reservation_id": "33333333-3333-4333-8333-333333333333",
+        "state": "SUCCEEDED"
+      },
+      "valid": false
+    },
+    {
+      "id": "INVALID_TOOL_TYPE",
+      "tool_schema": "read_workspace_file",
+      "request": {
+        "file_id": "../../.env"
+      },
+      "valid": false
+    },
+    {
+      "id": "SUMMARY_COMMENT_SESSION",
+      "schema": "SessionCreate",
+      "request": {
+        "task_kind": "POST_COMMENT",
+        "comment_mode": "ISSUE_SUMMARY",
+        "user_request": "이슈42를 읽고 요약 댓글을 한 번 작성해줘",
+        "issue_id": 42
+      },
+      "valid": true
+    },
+    {
+      "id": "INVALID_SUMMARY_COMMENT_BODY",
+      "schema": "SessionCreate",
+      "request": {
+        "task_kind": "POST_COMMENT",
+        "comment_mode": "ISSUE_SUMMARY",
+        "user_request": "이슈42를 읽고 요약 댓글을 한 번 작성해줘",
+        "issue_id": 42,
+        "allowed_comment_body": "pre-granted"
+      },
+      "valid": false
+    }
+  ]
+}

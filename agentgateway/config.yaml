@@ -1,0 +1,39 @@
+# Official v1.6.0, digest is pinned in compose.hookgw.yaml. HTTP proxy preserves MCP JSON-RPC.
+config: {}
+binds:
+- port: 8040
+  listeners:
+  - name: with-human-mcp
+    protocol: HTTPS
+    tls:
+      cert: /runtime/gateway.pem
+      key: /runtime/gateway.key
+    routes:
+    - name: enrolled-files
+      matches:
+      - path: {exact: /mcp}
+      backends:
+      - host: upstream:8060
+        policies:
+          backendTLS:
+            root: /runtime/ca.pem
+            hostname: upstream
+            cert: /runtime/gateway-client.pem
+            key: /runtime/gateway-client.key
+      policies:
+        extAuthz:
+          host: control:8050
+          policies:
+            backendTLS:
+              root: /runtime/ca.pem
+              hostname: control
+              cert: /runtime/gateway-client.pem
+              key: /runtime/gateway-client.key
+            http: {requestTimeout: 25s}
+          failureMode: deny
+          includeRequestHeaders: [authorization, content-type, x-with-human-request]
+          includeRequestBody: {maxRequestBytes: 65536, allowPartialMessage: false}
+          protocol:
+            http:
+              path: '"/authz"'
+              includeResponseHeaders: [x-with-human-forward]

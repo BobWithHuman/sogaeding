@@ -1,0 +1,22 @@
+{
+  "files": {
+    "src/app/benchmark/__init__.py": "ffd8bd910f5468b0029fa3fc048b5b01f3a02e2f77b15e291eb68de32c199fc4",
+    "src/app/benchmark/accounting.py": "77dd40c8f050788a49a1d48460e935d283836bf7aaba7412d7954c69e59f8cf7",
+    "src/app/benchmark/actor.py": "8629f5b68a5a2598ef7c3816bd20c10bffcb1620ca2191a9a78ca85ca3b54221",
+    "src/app/benchmark/hook.py": "7a236ab25ffbdec777211ee9dc7841f978ffceb40cbb9383af6f19a00902ea26",
+    "src/app/benchmark/policy.py": "5b82ce40b6cd2c3503daa67a6c41888b55f554a948fa40107028bd963d3bcab5",
+    "src/app/benchmark/proxy.py": "d2be7f168d92f2758bb3141412526e174cb725b504dd7113398a9ca786983207",
+    "src/app/benchmark/registry.py": "e7d97054dbbead3413a771239f06a3ff255cfb2c1b5d3a1e09ec8a2f3ba5ec43",
+    "src/app/benchmark/report.py": "3f1c80d9e1484e30a21a2abce99c10c551f173d06ce12952e660ec2bff2ae580",
+    "src/app/benchmark/server.py": "eaa34549ffe807212e5dd2954176cf3726fd36928df6c8fe4574f5954fde02f8",
+    "src/app/transparent/jev_decision_v5.py": "cbca7eb0b51de5487802e90eb75fb3bd17bc344b32c06aa314b6ed2138e65611",
+    "tools/dtap_inventory.py": "924fb741d43c61ebfdbece2d2dde44ce8f9ce8a23922dca71edd5e247c8b4793",
+    "tools/dtap_eval.py": "41aaa79594e2d93dfbfcbcabfa387ec9941b9cca4841a3e5e875df0d741fb3f2",
+    "tools/dtap_smoke.py": "6ee04b1f75510381f23ec6e25a3e37154ad1d1ad581dfe12ffc16db3ca5e6532",
+    "scripts/dtap_eval.ps1": "cf71aa9b26cbabcf43d84ce41de7283dac4f6ed07a3a76aa06c8b8f8435becf1",
+    "tests/hookgw/test_dtap_benchmark.py": "23285b149f5ae89abda6aa12e6149072d057fc0e0a8161b6d27246cfd2de0e89"
+  },
+  "vendor_manifest_sha256": "10fbb174078a8b0bf20075c8438f132fcfb52253f4e3f06fef99adbe12d163ad",
+  "source_commit": "e0323a521ba4ef88f8e14c1eccf68d0a3d19a458",
+  "manifest_sha256": "343bac491c239b5ead01cf0df9ab2951a2af18718a1dc0a9243dd5af8c780306"
+}

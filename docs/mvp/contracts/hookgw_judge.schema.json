@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "task_relation": {"type": "string", "enum": ["DIRECT", "DATA_DEPENDENT", "OUTSIDE_TASK", "UNCERTAIN"]},
+    "external_use": {"type": "string", "enum": ["NONE", "TASK_DATA", "NEW_INSTRUCTION", "UNCERTAIN"]},
+    "reason": {"type": "string", "enum": ["USER_INTENT_SUPPORTED", "TASK_DATA_SUPPORTED", "EXTERNAL_INSTRUCTION_DEPENDENCY", "SEMANTIC_UNCERTAIN", "OUTSIDE_TASK_SCOPE"]},
+    "evidence_span_ids": {"type": "array", "items": {"type": "string", "pattern": "^s1[AB]_[0-9a-f]{64}$"}, "maxItems": 8}
+  },
+  "required": ["task_relation", "external_use", "reason", "evidence_span_ids"]
+}

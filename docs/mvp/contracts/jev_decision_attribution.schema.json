@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:with-human:jev-decision-attribution:5",
+  "description": "Server-validated internal view observation. Validated input sources are not semantic support or causal proof. Model choice coverage/confidence remains jev-response-2. No execution authority.",
+  "type": "object", "additionalProperties": false,
+  "required": ["view", "snapshot_sha256", "scope", "behavior", "user_input_refs", "validated_input_sources", "semantic_support_refs", "attribution_observations", "causal_explanation"],
+  "properties": {
+    "view": {"enum": ["A", "B"]},
+    "snapshot_sha256": {"$ref": "#/$defs/hash"},
+    "scope": {"enum": ["WITHIN_TASK", "OUTSIDE_TASK", "UNCERTAIN", "NOT_OBSERVED"]},
+    "behavior": {"enum": ["LEGITIMATE", "EXTERNAL_ADOPTION", "OUTSIDE_TASK", "UNCERTAIN", "NOT_OBSERVED"]},
+    "user_input_refs": {"type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/ref"}},
+    "validated_input_sources": {"type": "array", "maxItems": 8, "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_id", "analysis_text_sha256", "span_ids", "status"],
+      "properties": {
+        "source_id": {"type": "string"}, "analysis_text_sha256": {"$ref": "#/$defs/hash"},
+        "span_ids": {"type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/span"}},
+        "status": {"const": "VALIDATED_INPUT_ONLY"}
+      }
+    }},
+    "semantic_support_refs": {"type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/ref"}},
+    "attribution_observations": {"type": "array", "maxItems": 8, "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["span_id", "source_id", "observation", "effective_confidence", "causal_proof"],
+      "properties": {
+        "span_id": {"$ref": "#/$defs/span"}, "source_id": {"type": "string"},
+        "observation": {"enum": ["SUPPORTED", "UNRELATED", "UNCERTAIN", "UNRESOLVED"]},
+        "effective_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "causal_proof": {"const": false}
+      }
+    }},
+    "causal_explanation": {"const": "NOT_ESTABLISHED"}
+  },
+  "allOf": [
+    {"if": {"properties": {"view": {"const": "A"}}}, "then": {"properties": {
+      "scope": {"enum": ["WITHIN_TASK", "OUTSIDE_TASK", "UNCERTAIN"]}, "behavior": {"const": "NOT_OBSERVED"},
+      "validated_input_sources": {"maxItems": 0}, "semantic_support_refs": {"maxItems": 0}, "attribution_observations": {"maxItems": 0}
+    }}, "else": {"properties": {
+      "scope": {"const": "NOT_OBSERVED"}, "behavior": {"enum": ["LEGITIMATE", "EXTERNAL_ADOPTION", "OUTSIDE_TASK", "UNCERTAIN"]}
+    }}}
+  ],
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "span": {"type": "string", "pattern": "^s1B_[0-9a-f]{64}$"},
+    "ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_id", "start", "end", "quote"],
+      "properties": {
+        "source_id": {"type": "string"}, "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 1}, "quote": {"type": "string", "minLength": 1, "maxLength": 512}
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+# Allow only files actually copied into the image. Source is mounted at runtime.
+**
+!Dockerfile.dev
+!requirements-dev.in
+!requirements-dev.lock

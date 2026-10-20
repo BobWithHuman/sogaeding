@@ -1,0 +1,2 @@
+# Stable checkout bytes across Windows/Linux; scripts work with LF on PowerShell.
+* text=auto eol=lf

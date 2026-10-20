@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:with-human:MVP-SPEC-5",
+  "title": "SPEC5 adapter namespace; server-selected SPEC and policy",
+  "$defs": {
+    "decision": {"enum": ["ALLOW", "DENY", "CONFIRM"]},
+    "state": {"enum": ["PENDING", "ANALYZING", "READY", "EXECUTING", "CONFIRM", "APPROVED", "DENIED", "STALE", "UNKNOWN", "OBSERVED", "OBSERVED_ERROR"]},
+    "event": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "event": {"enum": ["UserPromptSubmit", "PreToolUse", "PostToolUse", "ApprovalPoll"]},
+        "connection": {"type": "string", "minLength": 16},
+        "session": {"type": "string", "minLength": 1, "maxLength": 512},
+        "turn": {"type": "string", "minLength": 1, "maxLength": 512},
+        "prompt": {"type": "string", "minLength": 1, "maxLength": 16384},
+        "cwd": {"type": "string"}, "call": {"type": "string", "minLength": 1, "maxLength": 512},
+        "tool": {"type": "string"}, "args": {}, "output": {}, "failed": {"type": "boolean"},
+        "route": {"enum": ["native", "mcp"]}, "action_hash": {"type": "string"}
+      },
+      "required": ["event", "connection", "session", "turn"],
+      "allOf": [
+        {"if": {"properties": {"event": {"const": "UserPromptSubmit"}}}, "then": {"required": ["prompt", "cwd"]}},
+        {"if": {"properties": {"event": {"enum": ["PreToolUse", "PostToolUse"]}}}, "then": {"required": ["call", "tool", "args", "route"]}},
+        {"if": {"properties": {"event": {"const": "PostToolUse"}}}, "then": {"required": ["output"]}},
+        {"if": {"properties": {"event": {"const": "ApprovalPoll"}}}, "then": {"required": ["call", "action_hash"]}}
+      ]
+    }
+  },
+  "$ref": "#/$defs/event"
+}

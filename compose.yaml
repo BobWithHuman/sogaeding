@@ -1,0 +1,103 @@
+name: with-human
+
+x-development: &development
+  image: with-human-dev:local
+  build:
+    context: .
+    dockerfile: Dockerfile.dev
+    target: dev
+  user: "10001:10001"
+  init: true
+  working_dir: /workspace
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs:
+    - /tmp:size=128m,mode=1777
+  pids_limit: 128
+  mem_limit: 1g
+  cpus: 2
+  environment: &base-environment
+    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONUNBUFFERED: "1"
+    PYTHONPATH: /workspace/src
+    XDG_CACHE_HOME: /tmp/cache
+    RUFF_CACHE_DIR: /tmp/ruff-cache
+  networks: [development]
+
+services:
+  # Running this service prepares tools only; it does not expose an app endpoint.
+  dev:
+    <<: *development
+    command: [python, -c, "import time; time.sleep(86400)"]
+    volumes:
+      - ./docs:/workspace/docs:ro
+      - ./tools:/workspace/tools:ro
+      - ./tests:/workspace/tests:ro
+      - ./fixtures:/workspace/fixtures:ro
+      - ./pyproject.toml:/workspace/pyproject.toml:ro
+      - ./harness:/workspace/harness:ro
+      - type: bind
+        source: ./src
+        target: /workspace/src
+        read_only: true
+        bind: {create_host_path: false}
+
+  # Reserved commands are activated only after real app modules have been built.
+  control:
+    <<: *development
+    profiles: [app]
+    networks: [development, local-ingress]
+    command: [python, -m, app.control.serve]
+    environment:
+      <<: *base-environment
+      CONTROL_DB_PATH: /data/control.sqlite3
+      RUNTIME_DIR: /runtime
+      CONTRACT_DIR: /workspace/docs/mvp/contracts
+    ports: ["127.0.0.1:8000:8000"]
+    volumes:
+      - type: bind
+        source: ./src
+        target: /workspace/src
+        read_only: true
+        bind: {create_host_path: false}
+      - ./docs/mvp/contracts:/workspace/docs/mvp/contracts:ro
+      - ./artifacts/runtime-wp01/control:/runtime:ro
+      - control-data:/data
+
+  gateway:
+    <<: *development
+    profiles: [app]
+    networks: [development, local-ingress]
+    command: [python, -m, app.gateway.main]
+    environment:
+      <<: *base-environment
+      CONTROL_BASE_URL: https://control:8443
+      EFFECTS_DB_PATH: /data/effects.sqlite3
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: "8001"
+      MCP_RESOURCE_URL: https://127.0.0.1:8001/mcp
+      CONTRACT_DIR: /workspace/docs/mvp/contracts
+    ports: ["127.0.0.1:8001:8001"]
+    depends_on: [control]
+    volumes:
+      - type: bind
+        source: ./src
+        target: /workspace/src
+        read_only: true
+        bind: {create_host_path: false}
+      - ./fixtures:/workspace/fixtures:ro
+      - ./docs/mvp/contracts:/workspace/docs/mvp/contracts:ro
+      - ./artifacts/runtime-wp01/gateway:/runtime:ro
+      - effects-data:/data
+
+networks:
+  development:
+    internal: true
+  # Docker Desktop does not publish ports from an internal-only network.
+  # No application accepts arbitrary outbound URLs; published ports stay loopback-only.
+  local-ingress:
+
+volumes:
+  control-data:
+  effects-data:

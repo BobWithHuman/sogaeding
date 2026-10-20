@@ -1,0 +1,20 @@
+{
+  "agentgateway": {
+    "version": "1.6.0",
+    "official_release": "https://github.com/agentgateway/agentgateway/releases/tag/v1.6.0",
+    "source": "https://github.com/agentgateway/agentgateway",
+    "revision": "ea5608642b9d5c94c5baf5fd9f2f9849b808e963",
+    "image": "cr.agentgateway.dev/agentgateway@sha256:9d3e6044ddcdc0878b1787f77bd401252b95e22684203fb5e874c4c42d2ed90c",
+    "license": "Apache-2.0",
+    "sbom": "artifacts/20261016-hook-gw-dev/agentgateway.spdx.json",
+    "image_cve_status": "BLOCKED_SCOUT_LOGIN_REQUIRED; no login or credential changes performed",
+    "source_inventory_osv": "artifacts/20261016-hook-gw-dev/agentgateway-osv.json",
+    "verification": "Official registry digest and OCI source/revision/license labels; publisher signature NOT_VERIFIED; image/source advisory reachability partially assessed"
+  },
+  "codex_capability_baseline": {
+    "version": "0.154.0",
+    "platform": "windows-amd64",
+    "sha256": "be96b992178b1e467c225800da0d65f2c86d5eba1ef0b14632f65db381cbdfde",
+    "source": "Installed Codex desktop native CLI; no additional CLI downloaded"
+  }
+}

@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.invalid/mvp/tools.schema.json",
+  "title": "MVP-SPEC-4 MCP tool inputs (contract, not execution authority)",
+  "$defs": {
+    "get_issue": {
+      "type": "object",
+      "properties": {
+        "issue_id": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "issue_id"
+      ],
+      "additionalProperties": false
+    },
+    "read_workspace_file": {
+      "type": "object",
+      "properties": {
+        "file_id": {
+          "type": "string",
+          "enum": [
+            "PUBLIC_README",
+            "SECRET_ENV"
+          ]
+        }
+      },
+      "required": [
+        "file_id"
+      ],
+      "additionalProperties": false
+    },
+    "post_issue_comment": {
+      "type": "object",
+      "properties": {
+        "issue_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "resume_call_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "required": [
+        "issue_id",
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "tool_name": {
+          "const": "get_issue",
+          "type": "string"
+        },
+        "args": {
+          "$ref": "#/$defs/get_issue"
+        }
+      },
+      "required": [
+        "tool_name",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "tool_name": {
+          "const": "read_workspace_file",
+          "type": "string"
+        },
+        "args": {
+          "$ref": "#/$defs/read_workspace_file"
+        }
+      },
+      "required": [
+        "tool_name",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "tool_name": {
+          "const": "post_issue_comment",
+          "type": "string"
+        },
+        "args": {
+          "$ref": "#/$defs/post_issue_comment"
+        }
+      },
+      "required": [
+        "tool_name",
+        "args"
+      ],
+      "additionalProperties": false
+    }
+  ],
+  "x-mcp-tools": [
+    {
+      "name": "get_issue",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "issue_id"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "read_workspace_file",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "enum": [
+              "PUBLIC_README",
+              "SECRET_ENV"
+            ]
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "post_issue_comment",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "resume_call_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "issue_id",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    }
+  ],
+  "x-security-notes": [
+    "Annotations are descriptive hints only; trusted registry and PDP enforce policy.",
+    "resume_call_id is a bound reference, not an approval; omitted from action digest.",
+    "Unknown fields rejected; session and source identity are from authenticated context."
+  ],
+  "x-status": "NOT_IMPLEMENTED"
+}

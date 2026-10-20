@@ -1,0 +1,70 @@
+name: with-human-browser-b
+x-app: &app
+  image: with-human-dev:local
+  user: "10001:10001"
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: ["/tmp:size=128m,mode=1777"]
+  pids_limit: 128
+  mem_limit: 1g
+  networks: [private, ingress]
+  environment: &env
+    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONUNBUFFERED: "1"
+    PYTHONPATH: /workspace/src
+    CONTRACT_DIR: /workspace/docs/mvp/contracts
+    RUNTIME_DIR: /runtime
+    CONTROL_PORT: "8010"
+  working_dir: /workspace
+services:
+  control:
+    <<: *app
+    command: [python, -m, app.control.serve]
+    environment:
+      <<: *env
+      CONTROL_DB_PATH: /data/control.sqlite3
+    ports: ["127.0.0.1:8010:8010"]
+    volumes:
+      - ./src:/workspace/src:ro
+      - ./docs/mvp/contracts:/workspace/docs/mvp/contracts:ro
+      - ./artifacts/runtime-browser-b/control:/runtime:ro
+      - browser-control:/data
+  gateway:
+    <<: *app
+    command: [python, -m, app.gateway.main]
+    environment:
+      <<: *env
+      CONTROL_BASE_URL: https://control:8443
+      EFFECTS_DB_PATH: /data/effects.sqlite3
+      GATEWAY_PORT: "8011"
+      FIXTURE_DIR: /fixtures
+    ports: ["127.0.0.1:8011:8011"]
+    volumes:
+      - ./src:/workspace/src:ro
+      - ./docs/mvp/contracts:/workspace/docs/mvp/contracts:ro
+      - ./artifacts/runtime-browser-b/gateway:/runtime:ro
+      - ./artifacts/runtime-browser-b/fixtures:/fixtures:ro
+      - browser-effects:/data
+  driver:
+    <<: *app
+    profiles: [test]
+    command: [python, tools/browser_driver.py]
+    networks: [private]
+    environment:
+      <<: *env
+      RUNTIME_DIR: /test-runtime
+    volumes:
+      - ./src:/workspace/src:ro
+      - ./tools:/workspace/tools:ro
+      - ./docs/mvp/contracts:/workspace/docs/mvp/contracts:ro
+      - ./artifacts/runtime-browser-b:/test-runtime:ro
+      - browser-control:/control-data
+      - browser-effects:/effects-data
+networks:
+  private: {internal: true}
+  ingress: {}
+volumes:
+  browser-control:
+  browser-effects:

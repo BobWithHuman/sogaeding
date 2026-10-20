@@ -1,0 +1,11 @@
+# Explicit user followup only. Same DB, keys, provider ledger and total budget.
+services:
+  control:
+    environment:
+      HOOKGW_DEMO_DISPATCH: "1"
+      HOOKGW_JEV_PROFILE: semantic_confirm_v3
+    volumes:
+      - ./artifacts/runtime-mvp-demo/revisions/semantic-confirm-1/bundle:/product:ro
+  upstream:
+    volumes:
+      - ./artifacts/runtime-mvp-demo/revisions/semantic-confirm-1/bundle:/product:ro
