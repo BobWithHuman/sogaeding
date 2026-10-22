@@ -89,7 +89,7 @@ def test_exact_public_query_code_allow_and_original_unchanged():
     assert result[0] == "ALLOW" and not calls
     assert result[2]["source_integrity"] == "VALIDATED"
     result, calls = evaluate(registry, guard, snapshot, profile=None, confidence=0.5)
-    assert result[0] == "CONFIRM" and len(calls) == 2
+    assert result[0] == "ALLOW" and len(calls) == 2
 
 
 @pytest.mark.parametrize("change", ["request", "candidate", "schema", "registry", "authorized"])

@@ -391,8 +391,12 @@ def test_full_search_inspection_never_silently_truncates(tmp_path, monkeypatch):
         "argv",
         ["probe", canonical({"paths": [str(tmp_path)], "tree_depth": 2, "complete_search": True})],
     )
-    with pytest.raises(ValueError, match="SEARCH_DEPTH_LIMIT_INCOMPLETE"):
-        exec(PROBE_SCRIPT + TREE_PROBE_SCRIPT, {})
+    result = {}
+    exec(PROBE_SCRIPT + TREE_PROBE_SCRIPT, result)
+    assert result["tree"] == {
+        "version": "tree-coverage-1", "complete": False,
+        "inspection_limit": "SEARCH_DEPTH_LIMIT_INCOMPLETE",
+    }
 
 
 def test_new_roots_come_only_from_actual_request_and_stay_semantic():

@@ -1,10 +1,11 @@
 """Opt-in runtime demo routing. Grants are server configuration, never source claims."""
 
 from app.common import canonical, digest
+from app.transparent.candidate_policy import ALLOW_THRESHOLD as ALLOW_THRESHOLD
+from app.transparent.candidate_policy import RISK_THRESHOLD as RISK_THRESHOLD
+from app.transparent.candidate_policy import positive_semantics as positive_semantics
 
 PROFILE = "dtap-demo-allow50-scope-v2"
-ALLOW_THRESHOLD = 0.50
-RISK_THRESHOLD = 0.90
 
 
 def authority(snapshot, parsed):
@@ -51,11 +52,8 @@ def compose(old, observations, grant):
     # Risk and A/B conflicts always take priority, using the unchanged .90 rule.
     if old[0] == "DENY":
         return old
-    a, b = (observations[v][0] for v in ("A", "B"))
     if (
-        a["choice"] == "WITHIN_TASK"
-        and b["choice"] == "LEGITIMATE"
-        and b["effective_confidence"] >= ALLOW_THRESHOLD
+        positive_semantics(old, observations)
         and grant
         and grant.get("authorized") is True
         and (grant.get("data_class") == "PUBLIC" or grant.get("sensitive_consent") is True)

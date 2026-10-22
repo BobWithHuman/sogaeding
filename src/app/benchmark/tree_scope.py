@@ -2,6 +2,7 @@
 
 import re
 import stat
+import textwrap
 from pathlib import PurePosixPath
 
 from app.common import canonical
@@ -24,11 +25,11 @@ if arguments.get("tree_depth") is not None and rows and rows[0]["chain"] and row
     names=[]
     for entry in entries:
      names.append(entry.name)
-     if len(names)+len(nodes)>64: raise ValueError("TREE_NODE_LIMIT")
+     if len(names)+len(nodes)>64: raise TreeInspectionLimit("TREE_NODE_LIMIT")
    for name in sorted(names):
     p=path+"/"+name; s=os.stat(name,dir_fd=fd,follow_symlinks=False)
     output_bound+=len(p.encode())+256
-    if len(nodes)>=64 or output_bound>32768: raise ValueError("TREE_OUTPUT_LIMIT")
+    if len(nodes)>=64 or output_bound>32768: raise TreeInspectionLimit("TREE_OUTPUT_LIMIT")
     nodes.append({"path":p,"dev":s.st_dev,"ino":s.st_ino,"mode":s.st_mode,"uid":s.st_uid,"owner":pwd.getpwuid(s.st_uid).pw_name,"read":os.access(name,os.R_OK,dir_fd=fd,follow_symlinks=False),"search":os.access(name,os.X_OK,dir_fd=fd,follow_symlinks=False),"mtime":s.st_mtime_ns,"ctime":s.st_ctime_ns,"size":s.st_size})
     if stat.S_ISDIR(s.st_mode):
      current_node=nodes[-1]
@@ -50,7 +51,7 @@ if arguments.get("tree_depth") is not None and rows and rows[0]["chain"] and row
      finally: os.close(child)
   elif arguments.get("complete_search"):
    with os.scandir(fd) as entries:
-    if next(entries,None) is not None: raise ValueError("SEARCH_DEPTH_LIMIT_INCOMPLETE")
+    if next(entries,None) is not None: raise TreeInspectionLimit("SEARCH_DEPTH_LIMIT_INCOMPLETE")
   after=os.fstat(fd)
   if (before.st_mtime_ns,before.st_ctime_ns)!=(after.st_mtime_ns,after.st_ctime_ns): raise ValueError("TREE_CHANGED")
   return {"path":path,"dev":after.st_dev,"ino":after.st_ino,"mode":after.st_mode,"mtime":after.st_mtime_ns,"ctime":after.st_ctime_ns}
@@ -66,9 +67,27 @@ if arguments.get("tree_depth") is not None and rows and rows[0]["chain"] and row
 else: tree=None
 """
 
+# Only explicit inspection limits become local refusals. Races and real
+# infrastructure faults remain failures. Partial nodes never certify coverage.
+TREE_PROBE_SCRIPT = (
+    "\nclass TreeInspectionLimit(Exception): pass\ntry:\n"
+    + textwrap.indent(TREE_PROBE_SCRIPT, " ")
+    + '\nexcept TreeInspectionLimit as limit:\n tree={"version":"tree-coverage-1","complete":False,"inspection_limit":str(limit)}\n'
+)
+
 
 def check_tree(metadata, target, depth, sensitive, *, integrity_metadata=False):
     tree = metadata.get("tree")
+    if (
+        isinstance(tree, dict)
+        and set(tree) == {"version", "complete", "inspection_limit"}
+        and tree["version"] == "tree-coverage-1"
+        and tree["complete"] is False
+        and tree["inspection_limit"] in (
+            "TREE_NODE_LIMIT", "TREE_OUTPUT_LIMIT", "SEARCH_DEPTH_LIMIT_INCOMPLETE"
+        )
+    ):
+        return {"decision": "DENY", "reason": "RESOURCE_INSPECTION_LIMIT"}
     if (
         not isinstance(tree, dict)
         or tree.get("version") != "tree-coverage-1"

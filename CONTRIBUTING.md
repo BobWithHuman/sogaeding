@@ -61,7 +61,9 @@ up은 기존 Docker 서브넷 목록을 읽고 겹치지 않는 두 /24를 선�
 | DTAP 전용 범위·조회·shell 정책 | `src/app/benchmark/runtime_policy.py`, `task_scope.py` 등 |
 | CLI hooks·MCP 전송 | `tools/hookgw_hook.py`, `mvp_demo_hook.py`, `mvp_demo_mcp.py` |
 
-DTAP 전용 `.50` 정책과 파일 시연 정책은 서로 다른 프로필이다. 비교할 정책 ID를 명시한다.
+현재 제품 Jev 정책과 기본 런타임은 공통 `.50` 정상 허용 규칙을 사용한다. 위험 기준은 `.90`이다.
+명시한 과거 정책과 동결된 시연 bundle은 별도다. 비교할 실제 policy ID를 기록한다.
+팀원 자체 어댑터 연결은 README와 `docs/development/ENGINE_INTEGRATION.md`를 따른다.
 기본 `python -m pytest`는 설정상 harness 시험만 선택하므로 제품 시험 경로를 명시해야 한다.
 `team_dev.ps1 -Mode test`는 새 clone에서 실행 가능한 대표 제품 시험을 선택한다.
 과거 실제 응답 replay 시험 일부는 비공유 `artifacts/`에 의존하므로 기본 목록에서 제외했다.

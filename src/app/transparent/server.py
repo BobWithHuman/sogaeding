@@ -337,33 +337,17 @@ def main():
     mode = os.environ.get("HOOKGW_PDP", "GPT")
     if mode == "JEV":
         from app.transparent.jev import JevClient
-        from app.transparent.jev_config import load_settings
-        from app.transparent.jev_policy import JevPolicy
+        from app.transparent.jev_config import DEFAULT_PROFILE, load_settings, make_policy
         settings = load_settings(Path(os.environ.get("JEV_POLICY_FILE", "/jev-config/policy.json")))
-        profile = os.environ.get("HOOKGW_JEV_PROFILE", "legacy_v2")
-        if profile == "semantic_confirm_v3":
-            from app.transparent.jev_semantic_v3 import JevPolicyV3
-            router = JevPolicyV3(JevClient(settings))
-        elif profile == "behavior_v5":
-            from app.transparent.jev_decision_v5 import JevPolicyV5
-            router = JevPolicyV5(JevClient(settings))
-        elif profile == "behavior_v5p1":
-            from app.transparent.jev_core_v5p1 import JevPolicyV5P1
-            router = JevPolicyV5P1(JevClient(settings))
-        elif profile == "current_candidate_1":
-            from app.transparent.jev_core_v5p1 import JevPolicyCurrent
-            router = JevPolicyCurrent(JevClient(settings))
-        elif profile == "legacy_v2":
-            router = JevPolicy(JevClient(settings))
-        else:
-            raise RuntimeError("UNSUPPORTED_JEV_PROFILE")
+        profile = os.environ.get("HOOKGW_JEV_PROFILE", DEFAULT_PROFILE)
+        router = make_policy(JevClient(settings), profile)
     elif mode != "GPT":
         raise RuntimeError("UNSUPPORTED_PDP_MODE")
     elif os.environ.get("HOOKGW_USER_LIVE") == "1":
         from app.transparent.judge import DevelopmentJudge
         judge = DevelopmentJudge(os.environ["JUDGE_BUDGET_DB_PATH"])
     engine = Engine(os.getenv("HOOKGW_DB", "/data/control.sqlite3"), secret("storage.key").encode(), grant, judge, policy_router=router,
-                    preserve_history_on_policy_change=os.environ.get("HOOKGW_JEV_PROFILE") in ("semantic_confirm_v3", "behavior_v5", "behavior_v5p1"))
+                    preserve_history_on_policy_change=mode == "JEV")
     keys = {"machine": secret("machine.token"), "human": secret("human.token"), "machine_id": secret("machine.id"), "ticket": ticket}
     app = create_app(engine, keys)
     # Reject authz on the public listener even with a valid connection bearer.

@@ -1,125 +1,115 @@
-# sogaeding · With Human 엔진 MVP
+# sogaeding · With Human 엔진
 
-Codex의 등록 MCP 도구 호출에 사용자 요청·출처·행동 이력을 연결하고,
-규칙 및 Jev 의미 판정으로 실행 전에 허용·차단·사람 확인을 집행하는 개발 중인 보안 엔진이다.
+사용자 요청·서버가 수집한 출처·도구 호출 후보를 연결해 실행 전에 ALLOW/DENY/CONFIRM을 판정하는 Python 엔진이다.
+이 저장소의 엔진을 clone하고 팀원이 자체 어댑터·실행기를 연결해 DTAP으로 OFF/ON 평가한다.
 
-현재 구현은 **Python/FastAPI/SQLite + Codex hooks + 실제 agentgateway**다.
-조직의 Rust `withhuman-core`, Claude Code/Neo4j `engine-prototype`과 별도 구현이다.
-PC 전체·모든 native 도구·모든 IPI 보호나 벤치마크 방어율 검증을 완료한 제품은 아니다.
+## 현재 기본 정책
 
-## 먼저 확인: 아직 끝나지 않은 작업
+**정상 허용 기준은 .50, 위험 DENY 기준은 .90이다.**
+검증된 A의 원래 선택이 WITHIN_TASK이고, B가 LEGITIMATE이며 유효 확신도 .50 이상이어야 정상 ALLOW 후보다.
+권한·도구 schema·출처 무결성·단회 실행 예약도 통과해야 한다.
+A가 업무 밖/불확실이거나 B 확신도가 부족한 경우, 실제 동의가 필요한 경우에는 CONFIRM이 남는다.
 
-**공동 개발 환경은 준비했지만 엔진 기능·정확도·제품 연동 전체가 완료된 상태는 아니다.**
-등록 파일 시연의 정상 자동 쓰기와 별도 고정 위험 후보의 실제 Jev DENY는 확인했다.
-이 결과를 DTAP 전체 성능이나 모든 개발 업무 보호 완료로 확대하지 않는다.
+공통 규칙은 `src/app/transparent/candidate_policy.py`에 있다.
+현재 제품 Jev 정책과 기본 RuntimePolicy에 연결돼 있어 별도 .50 프로필을 켤 필요가 없다.
+과거 정책을 명시적으로 선택하거나 동결된 시연 bundle을 쓰면 해당 버전이 적용된다.
 
-| 남은 작업 | 쉬운 설명과 현재 문제 | 완료로 볼 조건 |
-|---|---|---|
-| **1. DTAP 평가 미완료** | 같은 공격 시나리오를 엔진 없이/붙여서 끝까지 비교해야 한다. 현재는 중간에 멈췄고, 최신 수정본의 거절은 코드 정책 DENY 26회·Jev 의미 DENY 0회여서 Jev가 공격을 판단해 막았다는 검증이 부족하다. | 동일 조건의 유효한 비교 결과, 공격 성공·정상 업무 성공·코드/Jev 차단·보류·오류를 분리한 보고 |
-| **2. 정상 업무가 불필요하게 멈추지 않도록 개선** | 사용자가 시킨 정상 검색·파일 읽기·쓰기·백업도 범위나 권한을 해석하지 못하면 확인 대기로 멈출 수 있다. 위험한 호출 하나를 거절한 뒤 안전한 방법으로 원래 일을 마치는 호환성도 보완해야 한다. DTAP 도구 어댑터에만 해당하는 제한과 공통 엔진 문제를 구분한다. | 검토한 정상 업무는 불필요한 승인 없이 완료하고, 위험 호출 거절 뒤에도 허용된 업무가 진행됨. 실제 동의가 필요한 작업은 계속 확인 |
-| **3. Jev 질문·입력·판정 조정** | Jev 연결은 있지만 현재 후보·사용자 요청·읽은 자료를 잘 구분하고 정상/위험을 안정적으로 판단하는지 더 확인해야 한다. 'Jev를 깎는다'는 말은 엔진이 보내는 질문과 문맥, 호출 조건, 응답 해석·최종 정책을 다듬는다는 뜻이다. | 권한상 가능한 정상 후보는 일관되게 허용하고, 외부 지시를 실제 채택한 위험 후보는 Jev 관측을 근거로 DENY·해당 실행 효과 0을 확인 |
-| **4. 대시보드 실제 연동** | 기본 이력 화면·조회/승인 API는 있다. 팀원이 만드는 화면과 인증·필드·상태·조회 범위를 맞춰 실제 데이터로 연결하는 작업은 남아 있다. | 실제 요청·출처·판정·실행 상태를 표시하고, 권한 있는 사용자의 정확한 CONFIRM 승인/거절만 서버에 반영 |
+## 1. clone하고 무모델 시험하기
 
-**2·3은 직접적인 엔진 개선이다. 1은 평가 실행·통합 및 성능 검증이며, 발견한 원인에 따라 엔진을 개선한다.
-4는 엔진 API와 화면의 연동이다.** 대시보드에 DTAP 실행·성적 화면을 추가하는 범위는 아니다.
-Jev 모델 자체를 재학습한 상태가 아니며, confidence 기준을 일괄 낮추면 해결됐다고 보지 않는다.
-등록 파일 제품 정책과 DTAP 전용 `.50` 허용 실험 프로필은 분리되어 있다.
-
-추가로 일반 native 셸·파일 도구 전체 보호, hook 장애의 모든 우회 경계, 운영·전수 보안 검증은 남아 있다.
-초기 기획의 **공격 차단률 90% 이상·정상 과차단률 10% 이하·저비용 판정 50ms 이하**는
-목표이며 달성한 수치가 아니다.
-
-## 팀원 시작
-
-Windows PowerShell 5.1 이상과 Docker Desktop(Linux containers)을 준비한다.
-clone한 저장소 디렉토리에서 실행한다. 기존 개발자의 키·DB·Docker 볼륨은 필요하지 않다.
+Git, Windows PowerShell 5.1 이상, Docker Desktop의 Linux containers를 준비한다.
+호스트 Python이나 다른 개발자의 키·DB·Docker 볼륨은 필요하지 않다.
 
 ```powershell
+git clone https://github.com/BobWithHuman/sogaeding.git
+cd sogaeding
 .\scripts\team_dev.ps1 -Mode build
 .\scripts\team_dev.ps1 -Mode test
+```
+
+- build: Python 3.12와 잠금 의존성을 설치한 개발 이미지를 만든다.
+- test: 네트워크를 차단한 컨테이너에서 기본 .50 정책·Jev 응답 검증·승인·인증·단회 예약을 시험한다.
+- **여기까지 모델 호출·API키·과금은 없다.** 현재 게시 후보의 깨끗한 checkout에서 141개 시험이 통과했다.
+- 이미 clone했다면 `git pull --ff-only` 후 시험한다. 의존성이 바뀌면 build도 다시 한다.
+
+Linux/macOS에서는 기본 정책 시험을 다음처럼 실행할 수 있다.
+
+```bash
+docker build --target dev -f Dockerfile.dev -t sogaeding-team-dev:local .
+docker run --rm --network none --read-only --tmpfs /tmp \
+  -e PYTHONDONTWRITEBYTECODE=1 \
+  -e PYTHONPATH=/workspace/src:/workspace/tests/hookgw:/workspace/tools \
+  -e CONTRACT_DIR=/workspace/docs/mvp/contracts \
+  -v "$PWD:/workspace:ro" -w /workspace sogaeding-team-dev:local \
+  python -m pytest -q -p no:cacheprovider tests/hookgw/test_default_candidate_policy.py
+```
+
+## 2. 자체 어댑터 연결하기
+
+| 용도 | 진입점 |
+|---|---|
+| 등록 파일 MCP 제품 엔진 | `app.transparent.engine.Engine` + `app.transparent.jev_config.make_policy(jev_client)` |
+| DTAP 등 새 schema를 연결하는 런타임 | `app.benchmark.registry.Registry` + `app.benchmark.runtime_policy.RuntimeEngine` / `RuntimePolicy` |
+| 공통 .50 허용 규칙 | `app.transparent.candidate_policy` |
+| 현재 A/B 질문 | `app.transparent.candidate_questions` |
+
+1. 실제 사용자 턴, 원 도구의 schema/identity와 인자를 연결한다.
+2. 도구 결과·설명을 서버가 수집해 원문/hash/완전성/수집 역할을 보존한다.
+3. 실제 환경에서 검증한 자원·효과 권한을 연결한다. 외부 문서의 승인 주장은 권한이 아니다.
+4. `turn → register → authorize → forward → 원 도구 실행 → transport_observed/observe` 흐름을 유지한다.
+5. DENY·미승인 CONFIRM·필수 분석 실패에서 실행하지 않는다. 정책 함수의 ALLOW만 보고 직접 실행하지 않는다.
+
+기본 RuntimePolicy의 완화된 허용 경로에는 서버가 검증한 정확한 권한이 필요하다.
+제품 서버는 `HOOKGW_PDP=JEV`일 때 profile 생략 시 현재 Jev 정책을 선택한다.
+등록 파일 제품 정책 밖 native 도구에 새로운 권한을 부여하는 변경은 아니다.
+
+자세한 입력·권한·집행 계약은 [엔진 연결 안내](docs/development/ENGINE_INTEGRATION.md)를 따른다.
+
+## 3. DTAP 평가하기
+
+DTAP 원 데이터셋과 actor 모델, Jev 키·요청 예산은 각자 새 로컬 환경에서 설정한다.
+이 게시본에는 기존 개발자의 키·로그인·실행 DB·원본 로그·데이터셋이 없다.
+AgentDojo/Gemini 전용 실행기도 이번 게시에 포함하지 않는다.
+
+같은 과업·공격·초기 환경으로 OFF/ON을 비교하고 다음을 각각 기록한다.
+
+- 공격 성공과 원래 업무 성공
+- 코드 DENY와 Jev 의미 DENY, 해당 도구의 실제 실행 여부
+- CONFIRM, UNKNOWN, 오류, 미시작
+- OFF에서 공격 성공한 사례가 ON에서 방어됐는지
+
+무모델 시험 통과를 실제 Jev 정확도나 방어율로 해석하지 않는다.
+모든 native 도구·모든 IPI 보호, 실제 벤치마크 방어 성능은 별도 검증 대상이다.
+이전 실응답 replay 시험 일부는 로컬 자료를 요구하므로 clone에서 전체 pytest가 재현된다고 가정하지 않는다.
+
+## gateway 연결이 필요할 때
+
+자체 Python 어댑터 평가에 Compose 파일을 모두 사용할 필요는 없다.
+제품 HTTP/TLS gateway 경로도 연결하려면 build/test 이후 실행한다.
+
+```powershell
 .\scripts\team_dev.ps1 -Mode prepare
 .\scripts\team_dev.ps1 -Mode up
 .\scripts\team_dev.ps1 -Mode check
 ```
 
 Control은 `https://127.0.0.1:8130`, MCP는 `https://127.0.0.1:8140/mcp`다.
-prepare는 새 전용 Docker 볼륨에 PKI·역할별 토큰·합성 workspace를 만들고 기존 자료는 덮어쓰지 않는다.
-check는 실제 TLS gateway/MCP 연결과 인증 거절을 확인한다. 도구 실행·모델 호출은 하지 않는다.
+prepare는 새 전용 Docker 볼륨에 PKI·역할별 토큰·합성 workspace를 만든다.
+check는 TLS/gateway/MCP 연결과 인증 거절을 확인하며 모델 호출은 하지 않는다.
+기본 provider는 비활성이다. 실제 Jev 호출은 별도 키·정책·예산 설정이 필요하다.
 종료는 `.\scripts\team_dev.ps1 -Mode down`이며 키·DB는 보존한다.
-기본 개발 경로는 provider 비활성 상태다. 필요한 의미 분석이 없으면 실행을 거절한다.
-이 연결 검사만으로 실제 모델의 정상 과업 성공·IPI 방어 성능을 주장하지 않는다.
-자세한 실행·만료·변경 반영·시험은 [공동 개발 안내](CONTRIBUTING.md)를 본다.
 
-## 구현 위치
+## YAML과 코드 위치
 
-| 경로 | 역할 |
+소스의 YAML은 17개다. 현재 팀 개발은 `compose.team.yaml`을 기준으로 한다.
+나머지는 gateway 설정·과거 시연 revision·회귀 검증·Jev 연결 예시다.
+[파일별 용도](docs/development/CONFIG_FILES.md)를 참고한다.
+
+| 경로 | 내용 |
 |---|---|
-| `src/app/transparent/` | 최신 turn·출처·호출·Jev·승인·실행 상태 엔진 |
-| `agentgateway/` | 실제 gateway HTTPS/mTLS·실행 전 인가 |
-| `tools/hookgw_*.py`, `tools/mvp_demo_*.py` | CLI hooks·MCP 전송·시연 |
-| `src/app/benchmark/` | DTAP 전용 실행·정책·off/on·사용량 집계 |
-| `src/app/control`, `gateway`, `pdp` 등 | 이전 계약의 회귀 경로와 공통 부품 |
-| `tests/`, `fixtures/` | 시험·합성 데이터 |
-| `docs/mvp/contracts/` | 이벤트·도구·상태 계약. 적용 버전·경로 확인 필요 |
+| `src/app/transparent/` | 현재 엔진·Jev·출처·승인·실행 상태 |
+| `src/app/benchmark/` | schema 등록·런타임 정책·기존 DTAP 연결 부품 |
+| `agentgateway/` | HTTPS/mTLS·실행 전 인가 |
+| `tests/`, `fixtures/` | 시험과 합성 자료 |
+| `docs/mvp/contracts/` | 이벤트·도구·상태 계약 |
 
-## 구현 상태와 한계
-
-- 구현: 사용자 입력·출처·호출 결합, 코드 권한 검사, Jev 의미 연동,
-  ALLOW/DENY/CONFIRM, gateway 집행, 정확한 단회 승인, UNKNOWN 보존, 기본 이력.
-- 실제 제한된 증거: 등록 합성 파일의 정상 자동 쓰기, 별도 고정 위험 후보의 실제 Jev DENY·금지 쓰기 0.
-- 미완료: DTAP의 Jev 판별 효과 검증, 일부 정상 검색/백업의 과도한 보류,
-  자원 검사 한도 초과 시 전체 중단, 일반 native 자유개발 보호, 완성형 대시보드.
-- 현재 A는 업무 범위, B는 외부 자료를 포함한 행동 적합성이다.
-  동일 질문의 외부 자료 전후 차이를 계산하는 방식은 아니다.
-- 일부 과거 실응답 replay 시험은 로컬 자료에 의존한다. clone에서 전체 시험·과거 LIVE가
-  자동 재현된다고 가정하지 않는다. 기본 대표 시험 범위는 개발 안내에 명시했다.
-
-## 팀원 인계
-
-- [현재 구조·API·미해결 항목](docs/development/TEAM_HANDOFF.md)
-- [개발기획서와 달라진 점·변경 이유](docs/development/PLAN_CHANGES.md)
-- [대시보드 화면 요구·mock 계약](docs/handoffs/WP-DASHBOARD-01/TEAMMATE_HANDOFF.md)
-  — 제안 API와 현재 구현을 구분하며 DTAP은 화면 범위에서 제외한다.
-- `docs/plans/`, `docs/handoffs/`는 설계·개발 이력이다. 과거 실행 명령·hash·금액·PC 경로를
-  신규 설치 지침으로 사용하지 않는다. 최신 진입점은 이 README와 CONTRIBUTING이다.
-
-## 공유 파일
-
-대상 저장소는 `BobWithHuman/sogaeding`이다. 아래 소스와 재현 자료를 공유한다.
-
-| 포함 대상 | 내용 |
-|---|---|
-| `src/` | 엔진·Jev·권한·실행 통제 및 DTAP 어댑터 코드 |
-| `scripts/`, `tools/`, `agentgateway/` | 실행·초기화·검증 도구와 gateway 설정 |
-| `tests/`, `fixtures/` | 시험 코드와 합성 예제 |
-| `Dockerfile.dev`, `compose*.yaml`, 의존성 잠금 파일 | 팀 개발 환경과 보존된 실행 프로필 |
-| `README.md`, `CONTRIBUTING.md`, `docs/` | 실행 안내·현재 API·남은 작업·기획 변경·설계/개발 이력 |
-| `AGENTS.md`, `.agents/`, `harness/`, Git 제외/줄바꿈 설정 | 기존 개발 지침·계약 점검·공유 경계 |
-
-실제 키·로그인·토큰·개인키·실행 DB·원본 로그·대용량 다운로드는 제외한다.
-`artifacts/`, 원본 PDF·추출문·로컬 분석 자료, `%SystemDrive%` 캐시는 게시 대상이 아니다.
-따라서 소스를 clone한 것만으로 과거 DTAP 실행 DB와 vendor 자료가 복구되지는 않는다.
-공유 키도 각자 로컬 환경으로만 설정한다.
-`python tools/repository_export.py`로 경로·credential 패턴을 보조 검사할 수 있다.
-모든 비밀 부재를 보증하는 검사는 아니다.
-기존 조직 저장소의 PR/커밋/리뷰 강제 규칙은 이번 준비에 추가하지 않았다.
-
-## 개발기획서와 달라진 점
-
-초기 목표인 **출처 기록 → 요청·호출 연결 → 필요한 판정 → 실행 전 차단·정상 업무 유지**는 유지한다.
-다음은 현재 구현과의 차이이며, 단순히 이름만 바뀐 것으로 설명하지 않는다.
-
-| 초기 기획 | 현재 구현 | 바꾼 이유·남은 한계 |
-|---|---|---|
-| 같은 질문을 외부 자료 없이/포함해 비교 | A는 업무 범위, B는 외부 자료를 포함한 행동 적합성을 별도로 관측 | 실제 후보의 적합성과 외부 지시 채택을 판단하도록 구성. 현재 방식으로 정확한 인과관계를 증명한다고 주장하지 않음 |
-| 읽기 전용 호출은 정책 단계에서 통과 | 등록·권한·민감 자원·실제 탐색 범위를 확인한 일부 조회만 코드 허용 | 읽기도 비밀 유출이 될 수 있기 때문. 정상 조회의 지원 범위는 더 넓혀야 함 |
-| 사용자 요청에 없고 외부에만 있는 값을 쓰면 공격 탐지 | 정상 데이터 활용과 외부 추가 지시 채택을 구분 | 제목·경로·보고서 사실처럼 외부 값을 정상적으로 사용하는 호출의 과차단 방지 |
-| 위험 행동의 원인·출처까지 역추적 | 검증된 출처/호출 연결과 행동 판정을 기록하고 정밀 귀속·인과 설명은 분리 | 정확한 문장 귀속이 불확실하다는 이유로 확인된 위험을 승인 가능한 보류로 약화시키지 않기 위함 |
-| 반복 위험 호출 시 최종 사용자 확인 | DENY는 사람 승인으로 해제하지 않고, 허용 범위의 모호한 CONFIRM만 정확한 단회 승인 | 반복·승인으로 확정 금지를 우회하지 못하게 하기 위함 |
-| PostgreSQL·Redis·OpenTelemetry | SQLite·세션/turn/call ID·hash 중심 | 단일 호스트 MVP의 설치·상태 관리를 줄임. 분산 추적·확장성 완료는 아님 |
-| gRPC ext_authz 중심 | 실제 agentgateway의 HTTP extAuthz + HTTPS/mTLS | 도구 인자와 PDP 판정을 기존 Python 서버에 연결해 집행. gRPC 서버와 LiteLLM 전체 경로는 미구현 |
-| Streamlit 행동 그래프·오탐 표시 | 기본 HTML/터미널 이력, 새 대시보드는 팀원이 별도 구현 | 실행·승인 경로부터 확인. 정식 화면과 API 통합은 미완료 |
-| 여러 에이전트·MCP 및 운영 배포 | Codex의 등록 파일 MCP 중심, 로컬 Docker Compose | 실제 실행 효과를 검증할 수 있는 범위부터 구현. 일반 개발 전체·AWS 배포·성능 목표 완료는 아님 |
-
-원 기획서 페이지·후속 결정·관련 코드·완료되지 않은 부분은
-[기획 대비 변경 기록](docs/development/PLAN_CHANGES.md)에 연결했다.
+[상세 개발 환경](CONTRIBUTING.md) · [엔진 연결 계약](docs/development/ENGINE_INTEGRATION.md)

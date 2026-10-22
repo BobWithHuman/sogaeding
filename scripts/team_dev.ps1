@@ -75,7 +75,8 @@ try {
                 -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/workspace/src:/workspace/tests/hookgw:/workspace/tools `
                 -e CONTRACT_DIR=/workspace/docs/mvp/contracts $teamImage python -m pytest -q -p no:cacheprovider `
                 tests/hookgw/test_engine.py tests/hookgw/test_jev_policy.py tests/hookgw/test_jev_response_contract.py `
-                tests/hookgw/test_demo_confirm_adapter.py tests/hookgw/test_core_auth_audit.py tests/hookgw/test_team_share.py
+                tests/hookgw/test_demo_confirm_adapter.py tests/hookgw/test_core_auth_audit.py tests/hookgw/test_team_share.py `
+                tests/hookgw/test_default_candidate_policy.py
         }
         'down' { Invoke-TeamDocker compose -p $teamProject -f compose.team.yaml down }
         'export' {
