@@ -112,7 +112,7 @@ def prepare(args, root=Path("/experiment"), parent=Path("/parent"), project=Path
     registry = RuntimeRegistry(
         enroll_os(
             json.loads(
-                (project / "artifacts/20261017-dtap-prepare/osfs-tools-actual.json").read_text(
+                (project / "fixtures/dtap/osfs-tools-e0323a5.json").read_text(
                     encoding="utf-8-sig"
                 )
             )

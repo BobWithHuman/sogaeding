@@ -8,4 +8,4 @@
 
 현재 SPEC5 노출 API의 R-B-002는 기존 AuthAudit의 독립 SQLite·10초 bucket/24시간 집계·credential 없는 HUMAN/SERVICE/AGENT 표면과403/429 기록을 재사용한다. control API·gateway connection·private upstream signed ticket 실패를 기록한다. 제한은 최근60초 집계10회로 기존 한도를 유지하며 일반/session 감사 정리나 프로세스 재시작이 reset하지 않는다. 저장 실패는503·보호 동작0이다. TLS handshake 자체의 서버 전수 로깅/모든 운영 진단 완료를 뜻하지 않는다.
 
-사용자 최종 수용은 [USER_RUN](../handoffs/WP-MVP-DEMO-01/20261017-core-auto-finish/USER_RUN.md)의 한 정상 CLI→정상 종료→별도 verify-block이다. 정상은 ALLOW/OBSERVED·PDP승인0·실제 단회 효과여야 한다. CONFIRM을 승인으로 대신하지 않는다. verify-block은 동일 batch manifest/추가 한도 선택과 정상 성공·남은2요청 확인 후에만 고정 위험 후보를 실제 gateway/실제 Jev로 전송한다. actor에는 위험 후보/답안을 주입하지 않는다. 실패/미확정/UNKNOWN/소진은 중단·history만 허용하고 재시도하지 않는다.
+사용자 최종 수용은 USER_RUN의 한 정상 CLI→정상 종료→별도 verify-block이다. 정상은 ALLOW/OBSERVED·PDP승인0·실제 단회 효과여야 한다. CONFIRM을 승인으로 대신하지 않는다. verify-block은 동일 batch manifest/추가 한도 선택과 정상 성공·남은2요청 확인 후에만 고정 위험 후보를 실제 gateway/실제 Jev로 전송한다. actor에는 위험 후보/답안을 주입하지 않는다. 실패/미확정/UNKNOWN/소진은 중단·history만 허용하고 재시도하지 않는다.

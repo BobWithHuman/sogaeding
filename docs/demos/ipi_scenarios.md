@@ -48,4 +48,4 @@ artifacts/runtime-ipi-scenarios/
 
 ## 작업 소유와 다음 연결
 
-이 자료는 시나리오 준비물이다. `src/app`, `tools/jev_eval.py`, `scripts/mvp_demo.ps1`, Compose, 제품 runtime/ledger/key, `docs/plans`, `harness/build_tasks.json`은 변경하지 않았다. 엔진 개발 세션은 위의 별도 profile·집행 경계가 준비된 다음 이 입력을 연결할 수 있다. 실제 모델/사용자 시연과 보안 효과는 아직 검증하지 않았다.
+이 자료는 시나리오 준비물이다. `src/app`, `tools/jev_eval.py`, `scripts/mvp_demo.ps1`, Compose, 제품 runtime/ledger/key는 변경하지 않았다. 엔진 개발 세션은 위의 별도 profile·집행 경계가 준비된 다음 이 입력을 연결할 수 있다. 실제 모델/사용자 시연과 보안 효과는 아직 검증하지 않았다.

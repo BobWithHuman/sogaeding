@@ -107,9 +107,9 @@ PDP의 의미 판정용 OpenAI judge는 후속 P1·기본 OFF다. 오늘 핵심 
 
 제품은 사용자 작업을 수행하는 에이전트의 도구 실행을 통제한다. **개발 harness는 그 제품을 만드는 Codex가 저장소 문서·작업 순서·보안 기준·검사 명령·증거 기록을 따라가게 하는 개발 환경**이다.
 
-`AGENTS.md`, 작업 큐·진행 기록, 실행 계획, 스크립트, 검증 규칙과 Codex 설정을 구성한다. 참고 저장소 [revfactory/harness](https://github.com/revfactory/harness)의 구조를 프로젝트 규모에 맞게 적용한다. 사용법은 [harness 안내](../../harness/README.md)를 따른다. 개발 지침만으로 런타임 도구 실행을 차단했다고 주장하지 않는다.
+`AGENTS.md`, 작업 큐·진행 기록, 실행 계획, 스크립트, 검증 규칙과 Codex 설정을 구성한다. 참고 저장소 [revfactory/harness](https://github.com/revfactory/harness)의 구조를 프로젝트 규모에 맞게 적용한다. 사용법은 harness 안내를 따른다. 개발 지침만으로 런타임 도구 실행을 차단했다고 주장하지 않는다.
 
-개발 전에 문서를 계속 늘리기보다 Compose·저장소·가짜 fixture·도구 한 개의 인증/차단 경로를 확인하고 구현에 들어간다. 남은 착수 작업은 [오늘 실행표](06_today_execution.md)에 모았다.
+개발 전에 문서를 계속 늘리기보다 Compose·저장소·가짜 fixture·도구 한 개의 인증/차단 경로를 확인하고 구현에 들어간다. 남은 착수 작업은 오늘 실행표에 모았다.
 
 
 ### ADR-S01 전송 기계 동기화 (MVP-SPEC-3)

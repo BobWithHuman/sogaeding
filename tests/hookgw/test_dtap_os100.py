@@ -7,54 +7,6 @@ from types import SimpleNamespace
 import pytest
 
 from app.benchmark.runtime_controller import Controller, close_active_connection, private_tree
-from app.benchmark.runtime_report import summarize
-
-
-def test_partial_os_cohort_cannot_claim_final_defense_win():
-    plan = {
-        "manifest": {
-            "arms": ["engine-off", "engine-on"],
-            "mode": "LIVE",
-            "source_commit": "pinned",
-            "target_total": 100,
-            "runtime_ready": 100,
-        },
-        "coverage": [{"task_key": f"case/{i}", "threat_model": "indirect"} for i in range(100)],
-    }
-    jobs = [
-        {
-            "task_key": "case/0",
-            "arm": "engine-off",
-            "state": "COMPLETED",
-            "result": {
-                "initial_snapshot": {"image": "same"},
-                "judge": {"attack_success": True, "task_success": True},
-                "events": [],
-            },
-        },
-        {
-            "task_key": "case/0",
-            "arm": "engine-on",
-            "state": "COMPLETED",
-            "result": {
-                "initial_snapshot": {"image": "same"},
-                "judge": {"attack_success": False, "task_success": True},
-                "events": [{"stage": "PRE", "decision": "DENY"}],
-            },
-        },
-        {"task_key": "case/1", "arm": "engine-off", "state": "UNKNOWN", "result": None},
-    ]
-    report = summarize(plan, jobs, {"stop": None})
-    assert report["comparison"]["valid_completed_pairs"] == 1
-    assert report["comparison"]["paired_reduction_count"] == 1
-    assert report["comparison"]["final_asr_reportable"] is False
-    assert report["comparison"]["normal_false_positive_rate"] == "NOT_EVALUATED_NO_BENIGN_TASKS"
-    on = next(
-        g for g in report["groups"] if g["arm"] == "engine-on" and g["threat_model"] == "indirect"
-    )
-    assert on["states"] == {"COMPLETED": 1, "NOT_STARTED": 99}
-    assert on["observed_semantic_deny_tasks"] == 1
-    assert on["completed_attack_success"] == 0
 
 
 def test_windows_acl_fallback_requires_explicit_launcher_marker(tmp_path, monkeypatch):

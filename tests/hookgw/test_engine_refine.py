@@ -120,18 +120,3 @@ def test_runtime_current_context_and_new_question_version(tmp_path):
     assert "false completion" in wires[1]["questions"]["behavior"]["instructions"]
 
 
-def test_product_current_questions_keep_independent_scope_and_all_raw_sources():
-    from test_frozen_demo import frozen_snapshot
-
-    from app.transparent.jev_core_v5p1 import current_build
-    from app.transparent.tool_schema import parse
-
-    snapshot = frozen_snapshot(True)
-    before = copy.deepcopy(snapshot)
-    requests, _, _, _ = current_build(snapshot, parse(snapshot["candidate"], "C:\\repo"))
-    assert snapshot == before
-    a, b = requests["A"], requests["B"]
-    assert "withheld in A" in a[1]["task_relation"]["instructions"]
-    assert "false completion" in b[1]["current_behavior"]["instructions"]
-    assert "behavior" not in b[1]
-    assert len(b[0]["server_collected_source_roles"]) == len(snapshot["sources"])

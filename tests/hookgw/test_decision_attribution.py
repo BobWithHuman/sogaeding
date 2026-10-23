@@ -15,13 +15,8 @@ from app.transparent.jev import MODEL, JevClient, JevSettings, validate_response
 from app.transparent.jev_decision_v5 import (
     JevPolicyV5,
     build,
-    combine_behavior,
     compose_view,
-    verified_inputs,
 )
-from app.transparent.jev_policy import selected
-from app.transparent.jev_semantic_v4 import JevPolicyV4
-from app.transparent.jev_semantic_v4 import build as build_v4
 from app.transparent.tool_schema import parse
 from tests.hookgw.test_jev_semantic_confirm_v3 import snapshot
 
@@ -40,49 +35,10 @@ class RecordedV4:
         return validate_response({"model": MODEL, "answers": answers, "usage": {"input_tokens": None, "output_tokens": None}}, questions)[0]
 
 
-@pytest.mark.parametrize("index", [0, 1])
-def test_original_v4_results_reproduce_actual_confirms_without_answer_promotion(index):
-    original = (RUN / "results/result.json").read_bytes()
-    plan = json.loads((RUN / "plan/requests.json").read_bytes())
-    recorded = json.loads(original)["results"][index]
-    observer = RecordedV4(recorded)
-    before = canonical(observer.row)
-    decision, reasons, trace, checks = asyncio.run(JevPolicyV4(observer).evaluate(plan["cases"][index]["snapshot"]))
-    assert decision == recorded["decision"] == "CONFIRM" and reasons == ["SEMANTIC_UNCERTAIN"]
-    assert all(check["status"] == "VALID" for check in checks.values())
-    assert trace["view_observations"] == recorded["policy_trace"]["view_observations"]
-    assert canonical(observer.row) == before and (RUN / "results/result.json").read_bytes() == original
-    payload = next(row for row in trace["view_observations"]["B"] if row["question"] == "basis_payload")
-    support = next(row for row in trace["view_observations"]["B"] if row["question"].startswith("support_payload_"))
-    assert payload["status"] == ("LOW_CONFIDENCE" if index == 0 else "ACCEPTED")
-    assert support["status"] == "LOW_CONFIDENCE"
 
 
-@pytest.mark.parametrize("index,expected", [(0, "CONFIRM"), (1, "DENY")])
-def test_legacy_risk_gate_counterfactual_uses_only_existing_accepted_risk_not_new_v5_answers(index, expected):
-    original = (RUN / "results/result.json").read_bytes()
-    case = json.loads((RUN / "plan/requests.json").read_bytes())["cases"][index]
-    observer = RecordedV4(json.loads(original)["results"][index])
-    snap = case["snapshot"]
-    requests, mappings, _, _ = build_v4(snap, parse(snap["candidate"], snap["server_grant"]["workspace"]))
-    verified_inputs(snap, "B", mappings["B"])
-    a = asyncio.run(observer.observe("A", *requests["A"], snap["analysis_id"]))
-    b = asyncio.run(observer.observe("B", *requests["B"], snap["analysis_id"]))
-    accepted_old_risk = any(selected(answer) == "ADDED_INSTRUCTION" for name, answer in b.items() if name.startswith("basis_"))
-    # A counterfactual server-gate change on the OLD accepted risk condition.
-    # Never fabricate a new V5 probability/answer from the old distribution.
-    decision, _ = combine_behavior(selected(a["task_relation"]) or "UNCERTAIN", "EXTERNAL_ADOPTION" if accepted_old_risk else "UNCERTAIN")
-    assert decision == expected
-    assert (RUN / "results/result.json").read_bytes() == original
-    print(json.dumps({"case_id": case["case_id"], "original_v4": "CONFIRM", "legacy_risk_gate_counterfactual": decision,
-                      "new_v5_question_answer": "NOT_OBSERVED", "old_probability_promotion": False}))
 
 
-def test_old_distributions_are_rejected_as_new_question_answers():
-    case = json.loads((RUN / "plan/requests.json").read_bytes())["cases"][0]
-    observer = RecordedV4(json.loads((RUN / "results/result.json").read_bytes())["results"][0])
-    with pytest.raises(AnalysisFailure):
-        asyncio.run(JevPolicyV5(observer).evaluate(case["snapshot"]))
 
 
 class SyntheticV5:

@@ -12,7 +12,7 @@ demo 전용 hook은 PreToolUse에서 정확한 의도와 당시 사용자 turn·
 
 CLI 수명주기는 예약별 새 start/finish 파일에 UTC·경과 시간·exit code·timeout/취소/시작 실패·자식 정리를 기록한다. 원본 argv/env/터미널은 저장하지 않는다. 종료 기록이 없는 과거 예약과 끝 기록이 유실된 실행은 UNKNOWN이다. 정상 프로세스 종료도 보고서 성공과 별도다. timeout/오류 뒤에는 실제 판정/효과 history를 함께 표시하고 명령을 비정상 종료한다. 이력의 USER_DEMO/OFFLINE_REPLAY, PDP 대기/OBSERVED/UNKNOWN, 실제 파일 효과를 구분한다.
 
-현재 최소 절차와 검증 결과는 [호스트 대기 보완 인계](../handoffs/WP-MVP-DEMO-01/20261016-mvp-hostwait/RESULT.md)에 연결한다. 실제 유료 actor/Jev 호출은 사용자가 직접 수행하며 개발 AI는 모델 없는 검증만 한다. 남은 시작 예약 1회는 정상 보고서 확인에 사용한다. 공격 시연을 위한 추가 시작 예약은 이 보완에서 발급하지 않는다.
+현재 최소 절차와 검증 결과는 호스트 대기 보완 인계에 연결한다. 실제 유료 actor/Jev 호출은 사용자가 직접 수행하며 개발 AI는 모델 없는 검증만 한다. 남은 시작 예약 1회는 정상 보고서 확인에 사용한다. 공격 시연을 위한 추가 시작 예약은 이 보완에서 발급하지 않는다.
 
 2026-10-16 WP-MVP-DEMO-01. 기존 SPEC5 outward 인증·인자 결합·원자 예약·UNKNOWN/TLS·역할키 경계를 유지한다. 새 내부 정책은 hookgw-2026-10-16-jev-v2, 질문 jev-narrow-2, 근거 계약 jev-slots-context-2다. 응답 검증 jev-response-2와 임계치 .90은 유지하며 임계치는 아직 실제 정확도로 보정되지 않았다.
 
@@ -38,10 +38,10 @@ typed 관측은 고정 질문/선택 enum·유한 확률·provider/computed/effe
 
 CLI의 짧은 타임라인과 로컬 HTML 결과는 ALLOW/실행관측, DENY, CONFIRM, 분석실패, UNKNOWN, 공격 미시도를 구별한다. HTML은 script/network/form 실행을 차단하는 CSP와 HTML escape를 적용한다. 실제 파일의 현재 내용/해시와 별도 upstream 원장을 판정과 대조한다. OBSERVED는 원자적 receipt/멱등성 보증이 아니며 실제 파일과 SQLite 변경은 원자적이지 않다. UNKNOWN을 자동 재시도하지 않는다. 결과 HTML은 새 파생 파일로 쓰고 원증거를 덮지 않는다.
 
-최종 정확 명령·manifest·화면 예시와 실행 증거는 [WP-MVP-DEMO-01 인계](../handoffs/WP-MVP-DEMO-01/20261016-mvp-demo/RESULT.md)에 있다. 개발 AI는 실제 모델을 호출하지 않는다. fake provider/합성 trusted hook actor+실제 gateway·파일 효과 회귀는 실제 모델 정확도/사용자 CLI 성공과 구분한다. 일반 native 개발·hook 사망 fail-open·동일 OS 사용자/helper 자기변조·전체 IPI/공급망·C/D/전체 MVP 완료를 주장하지 않는다.
+최종 정확 명령·manifest·화면 예시와 실행 증거는 WP-MVP-DEMO-01 인계에 있다. 개발 AI는 실제 모델을 호출하지 않는다. fake provider/합성 trusted hook actor+실제 gateway·파일 효과 회귀는 실제 모델 정확도/사용자 CLI 성공과 구분한다. 일반 native 개발·hook 사망 fail-open·동일 OS 사용자/helper 자기변조·전체 IPI/공급망·C/D/전체 MVP 완료를 주장하지 않는다.
 # V5 별도 시연 revision (2026-10-17)
 
-최신 준비는 `behavior-v5-1`이며 [USER_RUN](../handoffs/WP-MVP-DEMO-01/20261017-v5-demo/USER_RUN.md)의 고정 start/history 명령을 사용한다. 기존 `mvp_demo.ps1`·승인 터미널·viewer를 재사용하고 V3와 별도 workspace/DB/8036·8046 포트를 쓴다. V5 질문/조합/.90은 유지하며 live는 표준 JevClient다. 개발 검증은 저장된 V5 A/행동 숫자의 재현과 별도 합성 높은 정상 답을 구분한다. 정밀 귀속은 새 시험 자료에서 합성 UNCERTAIN으로 두며 과거 source 의미를 새 실제 관측으로 승격하지 않는다.
+최신 준비는 `behavior-v5-1`이며 USER_RUN의 고정 start/history 명령을 사용한다. 기존 `mvp_demo.ps1`·승인 터미널·viewer를 재사용하고 V3와 별도 workspace/DB/8036·8046 포트를 쓴다. V5 질문/조합/.90은 유지하며 live는 표준 JevClient다. 개발 검증은 저장된 V5 A/행동 숫자의 재현과 별도 합성 높은 정상 답을 구분한다. 정밀 귀속은 새 시험 자료에서 합성 UNCERTAIN으로 두며 과거 source 의미를 새 실제 관측으로 승격하지 않는다.
 
 개발 준비의 상태는 DEMO_PREPARED다. 새 Jev4/256000·CLI1(시작총4)·1800초, 역사합계25/1600000·demo관련20/1280000은 사용자 선택용 제안이며 실제 호출 승인이 아니다. 기존21/1344000·CLI3/3·V3 성공 파일과 서비스를 보존한다. 현재 V5 서비스는 disabled/JEV_RULES_ONLY이며 새 provider ledger/CLI claim이 없다.
 

@@ -2,9 +2,7 @@
 
 import asyncio
 import copy
-import json
 import stat
-from pathlib import Path
 
 import pytest
 from cryptography.fernet import Fernet
@@ -384,40 +382,5 @@ def test_recursive_probe_faults_never_use_model_or_dispatch(tmp_path, fault):
         engine.forward("m", "call")
 
 
-def test_actual_original_mcp_tree_and_exact_resource_evidence():
-    root = Path("/workspace/artifacts/20261018-normal-utility")
-    tree = json.loads((root / "real-os-r1/real-mcp-evidence.json").read_text())
-    exact = json.loads((root / "real-os-exact-r3/real-mcp-evidence.json").read_text())
-    assert tree["result"] == "PASS" and tree["legacy"]["decision"] == "CONFIRM"
-    assert tree["revision"]["decision"] == "ALLOW" and tree["revision"]["state"] == "OBSERVED"
-    assert (
-        tree["revision"]["structure_verified"] is True and tree["revision"]["business_calls"] == 1
-    )
-    assert all(v["business_calls"] == 0 for v in tree["negative"].values())
-    assert (
-        exact["result"] == "PASS" and exact["exact_resources"]["actual_readback_verified"] is True
-    )
-    assert (
-        exact["exact_resources"]["sibling_business_calls"] == 0
-        and exact["exact_resources"]["replay_additional_calls"] == 0
-    )
-    assert tree["provider_calls"] == exact["provider_calls"] == 0
 
 
-def test_report_v2_real_results_separates_code_semantic_and_denominators():
-    from app.benchmark.runtime_report import summarize
-
-    root = Path("/workspace/artifacts/20261018-dtap-os100/user-engine-demo-02-deny-followup")
-    plan = json.loads((root / "plan.json").read_text())
-    collected = json.loads((root / "collected-results.json").read_text())
-    jobs = collected["jobs"]
-    report = summarize(plan, jobs, collected["status"])
-    on = [g for g in report["groups"] if g["arm"] == "engine-on"]
-    assert sum(g["observed_semantic_deny_calls_all_states"] for g in on) == 1
-    assert sum(g["observed_code_deny_calls_all_states"] for g in on) == 28
-    assert "CONDITIONAL_11_PREVIOUS_SUCCESSES_PLUS_3" in report["comparison"]["sample_scope"]
-    benign = {g["arm"]: g for g in report["groups"] if g["threat_model"] == "benign"}
-    assert benign["engine-off"]["states"]["NOT_STARTED"] == 3
-    assert benign["engine-on"]["states"].get("NOT_STARTED", 0) == 0
-    assert sum(g["observed_semantic_deny_tasks"] for g in on) == 0
-    assert sum(g["observed_semantic_deny_tasks_all_states"] for g in on) == 1

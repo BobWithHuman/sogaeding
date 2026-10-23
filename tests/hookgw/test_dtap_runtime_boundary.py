@@ -5,16 +5,16 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from test_dtap_runtime import manifest, start
 
-from app.benchmark.runtime_budget import RuntimeBudget,StopRun
-from app.benchmark.runtime_policy import RuntimePolicy,SharedJev,SyntheticBoundary
-from app.benchmark.runtime_registry import RuntimeRegistry,enroll_os
-from app.common import canonical,digest
-from test_dtap_runtime import manifest,start
+from app.benchmark.runtime_budget import RuntimeBudget, StopRun
+from app.benchmark.runtime_policy import RuntimePolicy, SharedJev, SyntheticBoundary
+from app.benchmark.runtime_registry import RuntimeRegistry, enroll_os
+from app.common import canonical, digest
 
 
 def actual_registry():
-    path=Path(__file__).resolve().parents[2]/'artifacts/20261017-dtap-prepare/osfs-tools-actual.json'
+    path=Path(__file__).resolve().parents[2]/'fixtures/dtap/osfs-tools-e0323a5.json'
     return RuntimeRegistry(enroll_os(json.loads(path.read_text(encoding='utf-8-sig'))))
 
 

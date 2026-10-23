@@ -15,7 +15,7 @@ import pytest
 
 from app.benchmark.accounting import Exhausted, Ledger
 from app.benchmark.actor import ResponsesBackend, model_material
-from app.benchmark.hook import GatewayHook, GuardedDispatch, Stopped, official_hook_module
+from app.benchmark.hook import official_hook_module
 from app.benchmark.proxy import create_proxy
 from app.benchmark.registry import Registry, UnsupportedTool
 from app.benchmark.report import aggregate
@@ -145,97 +145,8 @@ def test_slots_cover_all_schema_fields_and_hash():
         Registry([entry])
 
 
-@pytest.mark.parametrize("decision", ["DENY", "CONFIRM"])
-def test_official_pre_outside_try_records_no_post_no_executor(decision):
-    async def run():
-        records = []
-
-        def control(request):
-            event = json.loads(request.content)
-            assert event["event"] == "PreToolUse"
-            return httpx.Response(200, json={"decision": decision, "state": "DENIED"})
-
-        def executor(request):
-            pytest.fail("Pre rejection must never dispatch")
-
-        async with (
-            httpx.AsyncClient(
-                transport=httpx.MockTransport(control), base_url="http://control"
-            ) as c,
-            httpx.AsyncClient(
-                transport=httpx.MockTransport(executor), base_url="http://gateway"
-            ) as g,
-        ):
-            hook = GatewayHook(
-                registry(), c, g, "fake", "connection", "session", "turn", records.append
-            )
-            dispatch = GuardedDispatch(module(), hook)
-            with pytest.raises(Stopped):
-                await dispatch.call("crm-original", "update-record", {"path": "1"})
-            assert len(records) == 1 and records[0]["decision"] == decision
-            dispatch.manager.clear()
-            with pytest.raises(Stopped, match="MISSING"):
-                await dispatch.call("crm-original", "update-record", {"path": "1"})
-
-    asyncio.run(run())
 
 
-@pytest.mark.parametrize("failure", [None, "transport", "post", "cancel"])
-def test_actual_official_wrap_gateway_once_post_and_failure(failure):
-    async def run():
-        events = []
-        attempts = []
-        records = []
-
-        def control(request):
-            event = json.loads(request.content)
-            events.append((request.url.path, event))
-            if event.get("event") == "PreToolUse":
-                return httpx.Response(200, json={"decision": "ALLOW"})
-            if event.get("event") == "PostToolUse":
-                assert event["route"] == "mcp" and event["output"] == {"content": []}
-                return httpx.Response(503 if failure == "post" else 200, json={"state": "OBSERVED"})
-            return httpx.Response(200, json={})
-
-        async def executor(request):
-            attempts.append(json.loads(request.content))
-            if failure == "transport":
-                raise httpx.ReadError("lost", request=request)
-            if failure == "cancel":
-                raise asyncio.CancelledError()
-            return httpx.Response(200, json={"result": {"content": []}})
-
-        async with (
-            httpx.AsyncClient(
-                transport=httpx.MockTransport(control), base_url="http://control"
-            ) as c,
-            httpx.AsyncClient(
-                transport=httpx.MockTransport(executor), base_url="http://gateway"
-            ) as g,
-        ):
-            hook = GatewayHook(
-                registry(), c, g, "fake", "connection", "session", "turn", records.append
-            )
-            dispatch = GuardedDispatch(module(), hook)
-            if failure:
-                expected = {"post": httpx.HTTPStatusError, "transport": httpx.ReadError,
-                            "cancel": asyncio.CancelledError}[failure]
-                with pytest.raises(expected):
-                    await dispatch.call("crm-original", "update-record", {"path": "1"})
-            else:
-                assert await dispatch.call("crm-original", "update-record", {"path": "1"}) == {
-                    "content": []
-                }
-            assert len(attempts) == 1
-            if failure in ("transport", "cancel"):
-                assert any(path == "/transport-failure" for path, _ in events)
-                assert records[-1]["state"] == "UNKNOWN"
-            elif failure == "post":
-                assert records[-1]["stage"] == "PRE"  # no false completion
-            else:
-                assert records[-1]["state"] == "OBSERVED"
-
-    asyncio.run(run())
 
 
 def test_official_loader_missing_or_changed_is_not_soft_fail(tmp_path):

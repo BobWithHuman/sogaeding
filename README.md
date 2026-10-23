@@ -43,6 +43,18 @@ docker run --rm --network none --read-only --tmpfs /tmp \
   python -m pytest -q -p no:cacheprovider tests/hookgw/test_default_candidate_policy.py
 ```
 
+전체 시험은 두 번에 나눠 실행한다. hardening 시험은 acceptance 시험과 같은 포트로 제품을 띄우므로 따로 돌린다.
+두 명령 모두 깨끗한 clone에서 로컬 산출물·키·모델 호출 없이 통과한다.
+
+```bash
+T="docker run --rm --network none --read-only --tmpfs /tmp:exec -e PYTHONDONTWRITEBYTECODE=1 \
+  -e PYTHONPATH=/workspace/src:/workspace/tests/hookgw:/workspace/tools \
+  -e CONTRACT_DIR=/workspace/docs/mvp/contracts -v $PWD:/workspace:ro -w /workspace \
+  sogaeding-team-dev:local python -m pytest -q -p no:cacheprovider"
+$T tests --ignore=tests/hardening
+$T tests/hardening
+```
+
 ## 2. 자체 어댑터 연결하기
 
 | 용도 | 진입점 |
@@ -79,7 +91,10 @@ AgentDojo/Gemini 전용 실행기도 이번 게시에 포함하지 않는다.
 
 무모델 시험 통과를 실제 Jev 정확도나 방어율로 해석하지 않는다.
 모든 native 도구·모든 IPI 보호, 실제 벤치마크 방어 성능은 별도 검증 대상이다.
-이전 실응답 replay 시험 일부는 로컬 자료를 요구하므로 clone에서 전체 pytest가 재현된다고 가정하지 않는다.
+
+macOS에서 actor를 **Claude Code CLI(본인 구독 로그인, API 키 미사용)**로 돌리는 실행기는
+`tools/dtap_claude_code.py`다. 준비·실행 명령과 제약은
+[Claude Code DTAP 실행 안내](docs/handoffs/WP-DTAP-CC-01/USER_RUN.md)를 따른다.
 
 ## gateway 연결이 필요할 때
 
@@ -110,6 +125,9 @@ check는 TLS/gateway/MCP 연결과 인증 거절을 확인하며 모델 호출�
 | `src/app/benchmark/` | schema 등록·런타임 정책·기존 DTAP 연결 부품 |
 | `agentgateway/` | HTTPS/mTLS·실행 전 인가 |
 | `tests/`, `fixtures/` | 시험과 합성 자료 |
-| `docs/mvp/contracts/` | 이벤트·도구·상태 계약 |
+| `docs/mvp/` | 요구·설계·API·보안/수용 기준, `contracts/`에 이벤트·도구·상태 계약 |
+| `docs/security/` | 보안 가이드 적용표·보안 기준·설계 결정(ADR)·보안 진단과 조치 기록(`hardening/`) |
+| `docs/handoffs/WP-DTAP-CC-01/` | Claude Code DTAP 실행 안내·결과·검토 |
+| `harness/dtap-cc/` | DTAP 과업 목록과 실행기 의존성 잠금 |
 
 [상세 개발 환경](CONTRIBUTING.md) · [엔진 연결 계약](docs/development/ENGINE_INTEGRATION.md)

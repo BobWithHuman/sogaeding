@@ -12,7 +12,6 @@ from app.common import canonical, digest
 from app.pdp.diagnostics import AnalysisFailure, failure_details
 from app.transparent.engine import Engine, Rejected
 from app.transparent.jev import MAX_REQUEST_BYTES, MODEL, JevClient, JevSettings, validate_response
-from app.transparent.jev_semantic_v3 import JevPolicyV3
 from app.transparent.jev_semantic_v4 import JevPolicyV4, build
 from app.transparent.tool_schema import parse
 from tests.hookgw.test_jev_semantic_confirm_v3 import snapshot
@@ -30,25 +29,8 @@ class RecordedV3:
         return validate_response({"model": MODEL, "answers": raw, "usage": {"input_tokens": None, "output_tokens": None}}, questions)[0]
 
 
-def test_recorded_v3_same_choices_and_probabilities_still_confirm_after_exact_boundary_repair():
-    before = RECORDED.read_bytes()
-    recorded = json.loads(before)
-    result = asyncio.run(JevPolicyV3(RecordedV3(recorded)).evaluate(snapshot()))
-    assert result[0] == "CONFIRM" and result[1] == ["SEMANTIC_UNCERTAIN"]
-    actual = result[2]["view_observations"]
-    for view in ("A", "B"):
-        for prior, row in zip(recorded["view_observations"][view], actual[view], strict=True):
-            assert row["choice"] == prior["choice"] and row["probabilities"] == prior["probabilities"]
-            assert row["provider_confidence"] == prior["provider_confidence"]
-            assert row["status"] == ("ACCEPTED" if row["question"] == "basis_target" else prior["status"])
-    target = next(row for row in actual["B"] if row["question"] == "basis_target")
-    assert target["computed_confidence"] == .9
-    assert RECORDED.read_bytes() == before
 
 
-def test_v3_answers_are_not_new_v4_observations():
-    with pytest.raises(AnalysisFailure):
-        asyncio.run(JevPolicyV4(RecordedV3(json.loads(RECORDED.read_bytes()))).evaluate(snapshot()))
 
 
 class SyntheticV4:

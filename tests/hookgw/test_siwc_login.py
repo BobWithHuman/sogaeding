@@ -4,7 +4,6 @@ import asyncio
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -751,69 +750,3 @@ def test_account_catalog_live_get_required_no_model_substitute(tmp_path, mode):
         c.models()
 
 
-def test_frozen_both_arm_binding_original_pair_and_separate_meter():
-    import hashlib
-    import sqlite3
-
-    from app.benchmark.runtime_demo import runtime_grant
-    from app.benchmark.runtime_login import verify
-    from app.benchmark.runtime_registry import RuntimeRegistry
-    from app.benchmark.runtime_report import summarize
-    from app.common import digest
-
-    root = Path("/workspace/artifacts/20261018-dtap-os100/user-chatgpt-login-luna")
-    parent = Path("/workspace/artifacts/20261018-dtap-os100/user-query-utility")
-    plan = json.loads((root / "plan.json").read_text())
-    m = plan["manifest"]
-    verify(root, plan, parent)
-    assert (
-        m["actor_model"] == MODEL
-        and m["arms"] == ["engine-off", "engine-on"]
-        and len(m["task_keys"]) == 100
-    )
-    assert (
-        m["selection_sha256"] == "05370679e22dc0f1eef328908a3ab1f819b168f336165c3312aa19734196250b"
-    )
-    connection = Path("/workspace/artifacts/20261020-dtap-login-luna/connection")
-    collected = json.loads((connection / "collected-results.json").read_text())
-    child_plan = json.loads((connection / "plan.json").read_text())
-    report = summarize(child_plan, collected["jobs"], collected["status"])
-    assert report["valid_completed_pairs"] == 1 and report["actual_model_accuracy"] == "NOT_RUN"
-    assert report["chatgpt_plan_usage"]["requests"] == 8
-    assert report["stage_api_micro_usd"] < 100 and report["inherited_api_micro_usd"] == 4190921
-    registry = RuntimeRegistry(m["chatgpt_plan"]["registry"])
-    for job in collected["jobs"]:
-        folder = connection / "arms" / job["arm"] / digest(job["task_key"])
-        grant = json.loads((folder / "runtime/grant.json").read_text())
-        assert grant == runtime_grant(m, job["task_key"], registry, {})
-        assert (
-            job["result"]["actor_model"] == MODEL
-            and job["result"]["provider_profile"] == "chatgpt-plan"
-        )
-        with sqlite3.connect(
-            (folder / "control-data/control.sqlite3").resolve().as_uri() + "?mode=ro", uri=True
-        ) as db:
-            policy = (
-                "dtap-demo-allow50-scope-v2"
-                if job["arm"] == "engine-on"
-                else "dtap-official-engine-off-1"
-            )
-            assert db.execute("SELECT hash FROM configuration").fetchone() == (
-                digest(canonical({"grant": grant, "policy": policy})),
-            )
-    initial = json.loads((connection / "source-manifest.json").read_text())
-    final = json.loads((root / "source-manifest.json").read_text())
-    changed = {p for p in final if final[p] != initial.get(p)}
-    assert changed == {
-        "src/app/benchmark/siwc_auth.py",
-        "src/app/benchmark/runtime_budget.py",
-        "src/app/benchmark/runtime_report.py",
-        "scripts/dtap_chatgpt_login.ps1",
-    }
-    for p, sha in final.items():
-        assert hashlib.sha256((Path("/workspace") / p).read_bytes()).hexdigest() == sha, p
-    with sqlite3.connect(
-        (root / "broker-data/provider.sqlite3").resolve().as_uri() + "?mode=ro", uri=True
-    ) as db:
-        assert not db.execute("SELECT 1 FROM jobs").fetchone()
-        assert db.execute("SELECT count(*) FROM reservations").fetchone()[0] == 429

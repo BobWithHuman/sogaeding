@@ -1,7 +1,6 @@
 """ADR-P04 policy recomposition; no new model answers or confidence promotion."""
 import asyncio
 import copy
-import json
 from itertools import product
 from pathlib import Path
 
@@ -12,7 +11,6 @@ from test_jev_semantic_confirm_v3 import snapshot
 from app.pdp.diagnostics import AnalysisFailure
 from app.transparent.jev import MODEL, validate_response
 from app.transparent.jev_core_v5p1 import JevPolicyV5P1, decide
-from app.transparent.jev_decision_v5 import JevPolicyV5
 
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "artifacts/runtime-jev-followups/followup-behavior-v5"
@@ -29,33 +27,8 @@ class Recorded:
         return validate_response({"model": MODEL, "answers": raw, "usage": {"input_tokens": None, "output_tokens": None}}, questions)[0]
 
 
-@pytest.mark.parametrize("index,old,new", [(0, "CONFIRM", "ALLOW"), (1, "DENY", "DENY")])
-def test_exact_original_snapshots_wires_and_real_answers_recomposed(index, old, new):
-    plan = json.loads((RUN / "plan/requests.json").read_bytes())
-    row = json.loads((RUN / "results/result.json").read_bytes())["results"][index]
-    case = plan["cases"][index]
-    a, b = Recorded(row), Recorded(row)
-    original = asyncio.run(JevPolicyV5(a).evaluate(case["snapshot"]))
-    changed = asyncio.run(JevPolicyV5P1(b).evaluate(case["snapshot"]))
-    assert original[0] == old and changed[0] == new
-    assert a.wires == b.wires == case["wire"]
-    assert original[2]["view_observations"] == changed[2]["view_observations"]
-    assert changed[2]["a_confidence_promoted"] is False
-    if index == 0:
-        assert changed[2]["a_thresholded_scope"] == "UNCERTAIN"
-        assert changed[2]["view_observations"]["A"][0]["effective_confidence"] == .86
-        assert changed[2]["view_observations"]["A"][0]["status"] == "LOW_CONFIDENCE"
 
 
-def test_two_safe_cli_observations_composition_only_without_snapshot_recovery():
-    rows = json.loads((ROOT / "artifacts/management-v5-live-safe-20261017/observation.json").read_bytes())["calls"]
-    results = []
-    for row in rows:
-        if row["decision"] == "CONFIRM":
-            a, b = row["observations"]["A"][0], row["observations"]["B"][0]
-            assert a["status"] == "LOW_CONFIDENCE" and b["effective_confidence"] >= .9
-            results.append(decide("UNCERTAIN", b["choice"], a["choice"], True, True)[0])
-    assert results == ["ALLOW", "ALLOW"]  # Safe summaries only, not reconstructed encrypted snapshots.
 
 
 MATRIX = list(product(("WITHIN_TASK", "OUTSIDE_TASK", "UNCERTAIN"), (True, False),

@@ -4,7 +4,6 @@ import asyncio
 import copy
 import json
 import stat
-from pathlib import Path
 
 import pytest
 from cryptography.fernet import Fernet
@@ -225,32 +224,6 @@ def test_original_gap_without_capability_tree_needs_two_jev_requests():
     assert result[2]["routing"] == "SEMANTIC" and len(c) == 2
 
 
-@pytest.mark.parametrize("fault", ["cap", "request", "registry", "principal", "limit", "baseline"])
-def test_prepared_capability_tamper_is_rejected(fault):
-    from app.benchmark.runtime_utility_acceptance import verify
-
-    root = Path("/workspace/artifacts/20261018-dtap-os100/user-query-utility")
-    plan = json.loads((root / "plan.json").read_text())
-    m = plan["manifest"]
-    cap = m["demo"]["query_capabilities"][m["task_keys"][0]]
-    if fault == "cap":
-        cap["path"] = "/workspace"
-    elif fault == "request":
-        cap["request_sha256"] = "changed"
-    elif fault == "registry":
-        cap["schema_sha256"] = "changed"
-    elif fault == "principal":
-        cap["principal"] = "root"
-    elif fault == "limit":
-        cap["max_depth"] = 4
-    else:
-        m["query_parent_provider_requests"]["jev"] += 1
-    with pytest.raises(RuntimeError):
-        verify(
-            root,
-            plan,
-            Path("/workspace/artifacts/20261018-dtap-os100/user-engine-demo-02-deny-followup"),
-        )
 
 
 @pytest.mark.parametrize("fault", ["replay", "proof", "argument", "session", "post"])
@@ -290,23 +263,3 @@ def test_code_query_keeps_real_reserve_binding_once_unknown(tmp_path, fault):
         assert engine.observe("machine", "call", tool, args, "ignored")["state"] == "OBSERVED"
 
 
-def test_actual_frozen_connection_and_provider_ledger():
-    root = Path("/workspace/artifacts/20261018-dtap-os100/user-query-utility")
-    from app.benchmark.runtime_utility_acceptance import verify, verify_fresh
-
-    plan = json.loads((root / "plan.json").read_text())
-    verify(
-        root,
-        plan,
-        Path("/workspace/artifacts/20261018-dtap-os100/user-engine-demo-02-deny-followup"),
-    )
-    verify_fresh(root, plan)
-    result = json.loads((root / "no-model-connection.json").read_text())
-    assert result["query_routing"]["jev_requests"] == 0
-    assert result["query_routing"]["counts"]["CODE_ALLOW"] == 3
-    assert result["actual_provider_calls"] == 0 and result["official_task_success"] == 3
-    assert all(
-        r["state"] == "OBSERVED"
-        for r in result["query_routing"]["calls"]
-        if r["routing"] == "CODE_ALLOW"
-    )

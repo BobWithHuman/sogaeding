@@ -2,7 +2,6 @@
 
 import asyncio
 import copy
-import json
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,7 +11,6 @@ from app.common import canonical
 from app.pdp.diagnostics import AnalysisFailure
 from app.pdp.semantic import material
 from app.transparent.jev import MODEL, validate_response
-from app.transparent.jev_policy import JevPolicy
 from app.transparent.jev_semantic_v3 import JevPolicyV3
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -42,31 +40,8 @@ class HistoricalObserver:
         return checked
 
 
-@pytest.mark.parametrize("position", [0, 1])
-def test_historical_v2_typed_observations_reproduce_two_confirms_without_promotion(position):
-    before = OBSERVATION.read_bytes()
-    recorded = [call for call in json.loads(before)["calls"] if call["decision"] == "CONFIRM"][position]
-    observer = HistoricalObserver(recorded["observations"])
-    original = canonical(observer.rows)
-    decision, reasons, trace, checks = asyncio.run(JevPolicy(observer).evaluate(snapshot()))
-    assert decision == "CONFIRM" and reasons == ["SEMANTIC_UNCERTAIN"]
-    assert trace["contract"] == "jev-slots-context-2"
-    assert all(row["status"] == "VALID" for row in checks.values())
-    assert canonical(observer.rows) == original and OBSERVATION.read_bytes() == before
-    for view in ("A", "B"):
-        actual = next(row for row in trace["view_observations"][view] if row["question"] == "task_relation")
-        prior = next(row for row in observer.rows if row["view"] == view and row["question"] == "task_relation")
-        assert actual["probabilities"] == prior["probabilities"]
-        assert actual["provider_confidence"] == prior["provider_confidence"]
-        assert actual["effective_confidence"] <= prior["provider_confidence"]
-        assert actual["status"] == "LOW_CONFIDENCE"
 
 
-def test_v2_observations_cannot_be_reinterpreted_as_v3_confident_answers():
-    recorded = next(call for call in json.loads(OBSERVATION.read_bytes())["calls"] if call["decision"] == "CONFIRM")
-    observer = HistoricalObserver(recorded["observations"])
-    with pytest.raises(AnalysisFailure):
-        asyncio.run(JevPolicyV3(observer).evaluate(snapshot()))
 
 
 class NewV3Observer:

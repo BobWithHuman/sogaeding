@@ -2,8 +2,6 @@
 
 import asyncio
 import copy
-import importlib.util
-from pathlib import Path
 
 import httpx
 import pytest
@@ -76,16 +74,6 @@ def test_empty_terminal_reconstructs_only_complete_items_and_reasoning():
     assert normalize(value, {"dt_probe_echo"})["output"][1]["call_id"] == "call_public"
 
 
-def test_frozen_stream1_parser_reproduces_lost_items():
-    path = (
-        Path(__file__).resolve().parents[2]
-        / "artifacts/20261018-dtap-os100/user-chatgpt-login-luna-stream1/source/src/app/benchmark/siwc_transport.py"
-    )
-    spec = importlib.util.spec_from_file_location("frozen_stream1_transport", path)
-    old = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(old)
-    assert asyncio.run(old.completed_stream(response(frames()), maximum=10000))["output"] == []
-    assert asyncio.run(completed_stream(response(frames()), maximum=10000))["output"] == items()
 
 
 @pytest.mark.parametrize(
