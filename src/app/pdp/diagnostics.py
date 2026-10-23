@@ -22,7 +22,7 @@ CODES = {
 }
 VIEWS = {"A", "B", "PAIR", "SERVER"}
 RESPONSE_STAGES = {"HTTP", "CONTENT_TYPE", "RESPONSE_SIZE", "JSON", "ENVELOPE", "MODEL", "QUESTIONS", "ANSWER", "OPTIONS", "PROBABILITY", "CONFIDENCE", "USAGE", "COMPLETE", "UNKNOWN"}
-RESPONSE_ISSUES = {"STATUS", "MEDIA_TYPE", "LIMIT", "INVALID_JSON", "TYPE", "FIELDS", "MISMATCH", "COVERAGE", "NUMERIC", "NONFINITE", "RANGE", "SUM", "ARGMAX", "CONSISTENCY", "NONE", "UNKNOWN"}
+RESPONSE_ISSUES = {"STATUS", "MEDIA_TYPE", "LIMIT", "INVALID_JSON", "TYPE", "FIELDS", "MISMATCH", "COVERAGE", "NUMERIC", "NONFINITE", "RANGE", "SUM", "ARGMAX", "CONSISTENCY", "THRESHOLD_AMBIGUOUS", "NONE", "UNKNOWN"}
 
 
 def detail(code, view="SERVER", metadata=None):
@@ -54,7 +54,7 @@ def detail(code, view="SERVER", metadata=None):
             value[key] = item
         elif key == "confidence_basis" and item == "MIN_PROVIDER_COMPUTED":
             value[key] = item
-        elif key == "response_contract" and item == "jev-response-2":
+        elif key == "response_contract" and item in ("jev-response-2", "jev-response-3"):
             value[key] = item
         elif key == "usage_field" and isinstance(item, str) and item in {"INPUT_TOKENS", "OUTPUT_TOKENS"}:
             value[key] = item

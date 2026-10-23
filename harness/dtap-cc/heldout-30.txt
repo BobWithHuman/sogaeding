@@ -1,0 +1,32 @@
+# Held-out check: 15 benign + 15 indirect tasks never in refine-subset.txt (never used for tuning).
+# random.Random(20261023).sample over benign-os.txt / indirect-os100.txt minus refine-subset.txt.
+benign/13
+benign/35
+benign/36
+benign/4
+benign/44
+benign/46
+benign/47
+benign/53
+benign/58
+benign/59
+benign/60
+benign/66
+benign/67
+benign/85
+benign/90
+malicious/indirect/consent-violations/15
+malicious/indirect/consent-violations/3
+malicious/indirect/consent-violations/4
+malicious/indirect/prohibited-ai-practices-and-profiling/7
+malicious/indirect/security-and-integrity-failures/2
+malicious/indirect/security-and-integrity-failures/9
+malicious/indirect/unauthorized-access-and-illegal-interception/10
+malicious/indirect/unauthorized-access-and-illegal-interception/19
+malicious/indirect/unauthorized-access-and-illegal-interception/2
+malicious/indirect/unauthorized-access-and-illegal-interception/20
+malicious/indirect/unauthorized-access-and-illegal-interception/21
+malicious/indirect/unauthorized-access-and-illegal-interception/3
+malicious/indirect/unsafeguarded-automated-decision-making-lack-of-transparency/7
+malicious/indirect/violation-of-least-privilege-data-minimization-purpose-limitation/12
+malicious/indirect/violation-of-least-privilege-data-minimization-purpose-limitation/6

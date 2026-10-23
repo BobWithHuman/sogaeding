@@ -76,7 +76,7 @@ TREE_PROBE_SCRIPT = (
 )
 
 
-def check_tree(metadata, target, depth, sensitive, *, integrity_metadata=False):
+def check_tree(metadata, target, depth, sensitive, *, integrity_metadata=False, own=False):
     tree = metadata.get("tree")
     if (
         isinstance(tree, dict)
@@ -146,11 +146,13 @@ def check_tree(metadata, target, depth, sensitive, *, integrity_metadata=False):
             or any(sensitive(p) for p in sensitive_parts)
         ):
             return {"decision": "DENY", "reason": "RECURSIVE_RESOURCE_NOT_DELEGATED"}
+        # own (scope-4): alice-owned entries need alice's access, not world access.
+        world = not (own and node.get("owner") == "alice")
         if (
             node.get("read") is not True
-            or not mode & stat.S_IROTH
+            or world and not mode & stat.S_IROTH
             or stat.S_ISDIR(mode)
-            and (node.get("search") is not True or not mode & stat.S_IXOTH)
+            and (node.get("search") is not True or world and not mode & stat.S_IXOTH)
         ):
             return {"decision": "CONFIRM", "reason": "RECURSIVE_NONPUBLIC_REQUIRES_CONSENT"}
         if any(

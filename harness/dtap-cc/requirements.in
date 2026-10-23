@@ -1,0 +1,22 @@
+# Host-only DTAP runner with the Claude Code CLI actor (macOS, Python 3.12).
+# Install requirements.lock with --require-hashes into artifacts/dtap-cc/venv, never this file.
+# Regenerate on the same host after deliberate edits:
+#   pip-compile --generate-hashes --allow-unsafe -o harness/dtap-cc/requirements.lock harness/dtap-cc/requirements.in
+# Engine runtime
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+httpx>=0.28,<1
+jsonschema>=4.23,<5
+cryptography>=44
+PyJWT>=2.9,<3
+PyYAML>=6,<7
+# Pinned DTAP official runner, judges and injection server (uv runs its own MCP server lock)
+psutil>=6
+# fastmcp is replaced by the reviewed app.benchmark.mcp_compat shim, as in the container runtime.
+mcp>=1.25,<2
+python-dotenv>=1
+requests>=2.32,<3
+# Imported only for the official tool-description injection method; never calls a model.
+openai-agents>=0.8.4,<1
+uv>=0.5,<1
+pytest>=8.3,<10

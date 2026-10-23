@@ -39,3 +39,6 @@ runtime/
 *.tar
 *.tar.gz
 node_modules/
+
+# A literal "~" folder created by an unexpanded path is never source.
+/~/

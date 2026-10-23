@@ -17,7 +17,7 @@ from uuid import uuid4
 
 import httpx
 
-from app.benchmark.denial import policy_denial, policy_feedback
+from app.benchmark.denial import policy_denial, policy_feedback, user_declined
 from app.benchmark.hook import GatewayHook, GuardedDispatch, Stopped
 from app.benchmark.responses_loop import AutonomousResponses, TaskIncomplete
 from app.common import canonical, digest
@@ -125,6 +125,18 @@ async def dispatch_tool(self, name, args):
             raise TaskIncomplete("SOURCE_CONTEXT_LIMIT_OBSERVED") from error
         if pre.get("stage") != "PRE":
             raise TaskIncomplete("GATEWAY_BINDING_STOP") from error
+        if (
+            str(error) == "DTAP_USER_DECLINED"
+            and pre.get("decision") == "CONFIRM"
+            and pre.get("consent") == "DENIED"
+            and pre.get("upstream_invoked") is False
+        ):
+            # The user's answer, as the environment's own permission refusal reads.
+            return {
+                "isError": True,
+                "policy_feedback": user_declined(),
+                "content": [{"type": "text", "text": "Permission DENIED by user. The action was not executed."}],
+            }
         if pre.get("decision") == "CONFIRM":
             raise TaskIncomplete("CONFIRM_UNAPPROVED") from error
         if not policy_denial(pre, error):

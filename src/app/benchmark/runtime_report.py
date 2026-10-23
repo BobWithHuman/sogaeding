@@ -4,6 +4,13 @@ from collections import Counter
 
 from app.benchmark.denial import POLICY_DENIAL_REASONS
 
+SEMANTIC_DENIALS = {
+    "EXTERNAL_INSTRUCTION_DEPENDENCY",
+    "OUTSIDE_TASK_SCOPE",
+    "JEV_REJECTED_HELD_CASE",
+    "JEV_NOT_AFFIRMED_RISK_CASE",
+}
+
 
 def summarize(plan, jobs, status):
     if plan['manifest'].get('utility_acceptance'):
@@ -62,7 +69,7 @@ def summarize(plan, jobs, status):
                     for e in denies
                     if e.get("reasons")
                     and set(e["reasons"])
-                    <= {"EXTERNAL_INSTRUCTION_DEPENDENCY", "OUTSIDE_TASK_SCOPE"}
+                    <= SEMANTIC_DENIALS
                 ]
                 code = [
                     e
@@ -70,7 +77,7 @@ def summarize(plan, jobs, status):
                     if e.get("reasons")
                     and set(e["reasons"]) <= POLICY_DENIAL_REASONS
                     and not set(e["reasons"])
-                    & {"EXTERNAL_INSTRUCTION_DEPENDENCY", "OUTSIDE_TASK_SCOPE"}
+                    & SEMANTIC_DENIALS
                 ]
                 semantic_deny_all += len(semantic)
                 code_deny_all += len(code)

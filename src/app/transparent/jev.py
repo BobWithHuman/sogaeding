@@ -29,10 +29,13 @@ MAX_USAGE_TOKENS = 1000000
 QUESTION_ID = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
 OPTION_ID = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,63}\Z")
 POLICY_ID = re.compile(r"[A-Za-z0-9_.-]{1,128}\Z")
-RESPONSE_CONTRACT = "jev-response-2"
+RESPONSE_CONTRACT = "jev-response-3"
 # Product compatibility assumption, not a provider precision guarantee. Two
-# displayed decimal places allow +/- .005 in pmax and in reported confidence.
+# displayed decimal places allow +/- .005 in pmax, in reported confidence and,
+# per option, in the probability total (live replies summed to .99).
 DISPLAY_HALF_UNIT = 0.005
+# candidate_policy.RISK_THRESHOLD; repeated to keep this transport free of policy imports.
+RISK_SELECTION = 0.90
 
 
 class ResponseValidationError(ValueError):
@@ -94,6 +97,11 @@ class JevSettings:
 
 def _probability(value):
     return type(value) in (int, float) and 0 <= value <= 1 and math.isfinite(value)
+
+
+def _display_value(value):
+    """A finite probability shown with at most two decimals (e.g. .93, .0)."""
+    return type(value) in (int, float) and math.isfinite(value) and (Fraction(str(value)) * 100).denominator == 1
 
 
 def _numeric_issue(value, *, integer=False, maximum=1):
@@ -200,22 +208,41 @@ def validate_response(value, questions):
             raise ResponseValidationError("OPTIONS", "COVERAGE", question_index=index, missing_options=len(set(question["criteria"]) - set(probs)) if isinstance(probs, dict) else len(question["criteria"]), extra_options=len(set(probs) - set(question["criteria"])) if isinstance(probs, dict) else 0)
         if issue := next((problem for v in probs.values() if (problem := _numeric_issue(v))), None):
             raise ResponseValidationError("PROBABILITY", issue, question_index=index)
-        if not math.isclose(sum(probs.values()), 1, rel_tol=0, abs_tol=1e-6):
-            raise ResponseValidationError("PROBABILITY", "SUM", question_index=index)
+        total = sum(probs.values())
+        shown = dict(probs)
+        normalized = False
+        if not math.isclose(total, 1, rel_tol=0, abs_tol=1e-6):
+            # Only two-decimal display values within their rounding drift are accepted;
+            # they are normalized exactly before any confidence is derived.
+            if not (all(_display_value(v) for v in probs.values())
+                    and abs(total - 1) <= DISPLAY_HALF_UNIT * len(probs) + 1e-9):
+                raise ResponseValidationError("PROBABILITY", "SUM", question_index=index)
+            probs = {option: float(Fraction(str(v)) / Fraction(str(total))) for option, v in probs.items()}
+            normalized = True
         selected = answer["choice"]
         if not isinstance(selected, str) or selected not in probs or probs[selected] != max(probs.values()):
             raise ResponseValidationError("PROBABILITY", "ARGMAX", question_index=index)
         n = len(probs)
-        expected = computed_confidence(max(probs.values()), n)
+        # A rounded total may have been derived from the shown or the normalized pmax;
+        # either must agree, and the smallest derivation is the one ever used.
+        derived = [computed_confidence(max(probs.values()), n)]
+        if normalized:
+            derived.append(computed_confidence(max(shown.values()), n))
+        expected = min(derived)
         reported = answer["confidence"]
         if issue := _numeric_issue(reported):
             raise ResponseValidationError("CONFIDENCE", issue, question_index=index)
         bound = DISPLAY_HALF_UNIT * n / (n - 1) + DISPLAY_HALF_UNIT + 1e-6
-        if abs(reported - expected) > bound:
+        if all(abs(reported - value) > bound for value in derived):
             raise ResponseValidationError("CONFIDENCE", "CONSISTENCY", question_index=index)
+        if normalized and min(derived + [reported]) < RISK_SELECTION <= max(reported, derived[-1]):
+            # Normalization must not pull a reply the provider showed at >= .90 below the
+            # risk-selection line; such a reply stays invalid (fail closed) as before.
+            raise ResponseValidationError("CONFIDENCE", "THRESHOLD_AMBIGUOUS", question_index=index)
         effective = min(reported, expected)
         validated[key] = {**answer, "probabilities": dict(probs), "confidence": effective}
-        comparisons.append({"question": key, "question_index": index, "provider": reported, "computed": expected, "effective": effective})
+        comparisons.append({"question": key, "question_index": index, "provider": reported, "computed": expected,
+                            "effective": effective, "probabilities_normalized": normalized})
     return ValidatedAnswers(validated, comparisons), usage
 
 

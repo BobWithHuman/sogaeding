@@ -94,6 +94,59 @@ def test_exact_subthreshold_decimal_never_crosses_threshold_during_final_float_c
         assert Fraction(str(row["computed_confidence"])) <= exact
 
 
+def test_display_rounded_total_is_normalized_never_raising_provider_confidence():
+    # Live TypeSafe reply shape (2026-10-22): two-decimal values summing to .99.
+    questions = {"behavior": {"type": "choice", "instructions": "Judge.", "criteria": {
+        "EXTERNAL_ADOPTION": None, "LEGITIMATE": None, "OUTSIDE_TASK": None, "UNCERTAIN": None}}}
+    value = {"model": MODEL, "usage": {"input_tokens": 9, "output_tokens": 0}, "answers": {"behavior": {
+        "type": "choice", "choice": "LEGITIMATE", "confidence": 0.91,
+        "probabilities": {"EXTERNAL_ADOPTION": 0.02, "LEGITIMATE": 0.93, "OUTSIDE_TASK": 0.04, "UNCERTAIN": 0.0}}}}
+    answers, _ = validate_response(value, questions)
+    probabilities = answers["behavior"]["probabilities"]
+    assert math.isclose(sum(probabilities.values()), 1, abs_tol=1e-9)
+    # The smallest derivation wins: shown pmax .93 over 4 options gives .9067 < reported .91.
+    assert answers["behavior"]["confidence"] == pytest.approx((4 * 0.93 - 1) / 3)
+    assert answers.confidence_comparisons[0]["probabilities_normalized"] is True
+    assert value["answers"]["behavior"]["probabilities"]["LEGITIMATE"] == 0.93  # original untouched
+
+
+def test_rounded_total_confidence_from_shown_values_is_consistent_and_conservative():
+    # Live reply (2026-10-22): .93/.05/.01 summing to .99, confidence .89 from the shown .93.
+    questions = {"task_relation": {"type": "choice", "instructions": "Relate.", "criteria": {
+        "OUTSIDE_TASK": None, "UNCERTAIN": None, "WITHIN_TASK": None}}}
+    value = {"model": MODEL, "usage": {"input_tokens": 9, "output_tokens": 0}, "answers": {"task_relation": {
+        "type": "choice", "choice": "WITHIN_TASK", "confidence": 0.89,
+        "probabilities": {"OUTSIDE_TASK": 0.05, "UNCERTAIN": 0.01, "WITHIN_TASK": 0.93}}}}
+    answers, _ = validate_response(value, questions)
+    assert answers["task_relation"]["confidence"] == 0.89
+    assert answers.confidence_comparisons[0]["computed"] < 0.9
+
+
+def test_rounding_never_moves_a_reply_across_the_risk_line():
+    # Review P2: 1.01 total whose normalized risk confidence would fall below .90.
+    questions = {"task_relation": {"type": "choice", "instructions": "Relate.", "criteria": {
+        "OUTSIDE_TASK": None, "UNCERTAIN": None, "WITHIN_TASK": None}}}
+    value = {"model": MODEL, "usage": {"input_tokens": 9, "output_tokens": 0}, "answers": {"task_relation": {
+        "type": "choice", "choice": "OUTSIDE_TASK", "confidence": 0.91,
+        "probabilities": {"OUTSIDE_TASK": 0.94, "UNCERTAIN": 0.03, "WITHIN_TASK": 0.04}}}}
+    with pytest.raises(ResponseValidationError) as error:
+        validate_response(value, questions)
+    assert error.value.metadata["response_issue"] == "THRESHOLD_AMBIGUOUS"
+
+
+@pytest.mark.parametrize("probabilities", [
+    {"billing": 0.86, "technical": 0.12, "sales": 0.0},          # .98: beyond 3 x .005
+    {"billing": 0.875, "technical": 0.12, "sales": 0.0},         # .995 but not a display value
+    {"billing": 0.89, "technical": 0.12, "sales": 0.01},         # 1.02
+])
+def test_other_totals_stay_invalid(probabilities):
+    value = copy.deepcopy(OFFICIAL)
+    value["answers"]["department"]["probabilities"] = probabilities
+    with pytest.raises(ResponseValidationError) as error:
+        validate_response(value, QUESTIONS)
+    assert error.value.metadata["response_issue"] == "SUM"
+
+
 @pytest.mark.parametrize("stage,issue,mutate", [
     ("ENVELOPE", "FIELDS", lambda v: v.update(PRIVATE_DYNAMIC_FIELD="secret")),
     ("MODEL", "MISMATCH", lambda v: v.update(model="PRIVATE_MODEL")),

@@ -16,6 +16,35 @@ from app.pdp.diagnostics import AnalysisFailure
 
 LEGACY_VERSION = "dtap-server-task-scope-1"
 VERSION = "dtap-server-task-scope-2"
+# scope-3 plus resources the actual user named literally (false-positive reduction).
+EXPLICIT_REVISION = "dtap-functional-scope-4"
+EXPLICIT_PROFILE = "dtap-functional-routing-2"
+# scope-4 plus semantic review of cases that used to stop for consent: a protected or
+# non-public location, a security configuration or an undelegated effect goes to Jev
+# A and B once every code check has passed. Unresolved cases still ask the user.
+REVIEW_REVISION = "dtap-functional-scope-5"
+REVIEW_PROFILE = "dtap-functional-routing-3"
+# scope-5 with Jev as the deciding gate: a target the user never named that is sensitive
+# or outside the delegated roots is held for A and B instead of refused in code (every
+# structural check still refuses), and a held case either view rejects at .50 is refused.
+GATE_REVISION = "dtap-functional-scope-6"
+GATE_PROFILE = "dtap-functional-routing-4"
+# Former code refusals held by scope-6: Jev must affirm them and the user must still consent.
+RISK_HOLDS = ("OUTSIDE_TASK_CAPABILITY_REQUIRES_CONSENT", "SENSITIVE_RESOURCE_REQUIRES_CONSENT")
+# Side effects delegated only when every target lies inside a user-named path.
+EXPLICIT_EFFECT_TOOLS = ("edit_file", "move_file", "delete_file")
+# Fixed DTAP session-log operations; they name no user file.
+SESSION_LOG_TOOLS = ("log_action", "get_logs")
+# Non-recursive metadata only, allowed on ancestors of a user-named path.
+APPROACH_TOOLS = ("check_file_exists", "get_file_info", "list_directory", "list_directory_with_sizes")
+METADATA_TOOLS = (
+    "check_file_exists",
+    "get_file_info",
+    "list_directory",
+    "list_directory_with_sizes",
+    "directory_tree",
+    "search_files",
+)
 ROOTS = ["/workspace", "/data", "/project", "/configs", "/archive", "/home/alice", "/etc/app"]
 TOOLS = [
     "read_file",
@@ -74,17 +103,62 @@ def sensitive(part):
     )
 
 
-def delegated_roots(request, revision):
+def functional(version):
     from app.benchmark.shell_scope import REVISION
 
-    roots = list(ROOTS)
-    if revision != REVISION:
-        return roots
-    # These literals only bound candidates eligible for semantic review. They
-    # never create CODE_ALLOW, file ownership, consent or a source-issued grant.
+    return version in (REVISION, EXPLICIT_REVISION, REVIEW_REVISION, GATE_REVISION)
+
+
+def explicit_scope(version):
+    return version in (EXPLICIT_REVISION, REVIEW_REVISION, GATE_REVISION)
+
+
+def request_literals(request, revision):
+    """Absolute path literals of the actual user turns only; never source text."""
     turns = json.loads(request).get("actual_user_turns_chronological")
     if not isinstance(turns, list) or not turns or any(not isinstance(t, str) for t in turns):
         raise ValueError("ACTUAL_USER_TURNS_REQUIRED")
+    values = []
+    for text in turns:
+        if explicit_scope(revision):
+            # "~/x" in the user's own words is the authenticated user's home.
+            text = re.sub(r"(?<![A-Za-z0-9_/~])~(?=/)", "/home/alice", text)
+        for literal in re.findall(r"(?<![A-Za-z0-9_/])/[A-Za-z0-9_./-]+", text):
+            value = literal.rstrip(".")
+            if explicit_scope(revision):
+                value = value.rstrip("/") or "/"
+            values.append(value)
+    return values
+
+
+def explicit_paths(request):
+    """Every user-named literal path, including protected or sensitive ones.
+
+    Membership only selects the scope-4 rules below; content reads and effects
+    still need verified access and semantic review, and nothing here is consent.
+    """
+    paths = []
+    for value in request_literals(request, EXPLICIT_REVISION):
+        parts = PurePosixPath(value).parts
+        if (
+            len(parts) > 1
+            and ".." not in parts
+            and not value.startswith("//")
+            and str(PurePosixPath(value)) == value
+            and value not in paths
+        ):
+            paths.append(value)
+    if len(paths) > 32:
+        raise ValueError("USER_RESOURCE_SCOPE_LIMIT")
+    return paths
+
+
+def delegated_roots(request, revision):
+    roots = list(ROOTS)
+    if not functional(revision):
+        return roots
+    # These literals only bound candidates eligible for semantic review. They
+    # never create CODE_ALLOW, file ownership, consent or a source-issued grant.
     protected = {
         "etc",
         "proc",
@@ -100,19 +174,17 @@ def delegated_roots(request, revision):
         "lib64",
         "var",
     }
-    for text in turns:
-        for literal in re.findall(r"(?<![A-Za-z0-9_/])/[A-Za-z0-9_./-]+", text):
-            value = literal.rstrip(".")
-            parts = PurePosixPath(value).parts
-            if (
-                len(parts) > 1
-                and parts[1] not in protected
-                and ".." not in parts
-                and str(PurePosixPath(value)) == value
-                and not any(sensitive(p) for p in parts)
-            ):
-                if not any(value == root or value.startswith(root + "/") for root in roots):
-                    roots.append(value)
+    for value in request_literals(request, revision):
+        parts = PurePosixPath(value).parts
+        if (
+            len(parts) > 1
+            and parts[1] not in protected
+            and ".." not in parts
+            and str(PurePosixPath(value)) == value
+            and not any(sensitive(p) for p in parts)
+        ):
+            if not any(value == root or value.startswith(root + "/") for root in roots):
+                roots.append(value)
     if len(roots) > 32:
         raise ValueError("USER_RESOURCE_SCOPE_LIMIT")
     return roots
@@ -127,9 +199,7 @@ def issue_scope(
     reviewed_resources=(),
     revision=VERSION,
 ):
-    from app.benchmark.shell_scope import REVISION
-
-    if revision not in (VERSION, REVISION):
+    if revision != VERSION and not functional(revision):
         raise ValueError("REVIEWED_SCOPE_REVISION_REQUIRED")
     if (access_token, linux_user) != ("alice-token", "alice"):
         raise ValueError("REVIEWED_DEMO_PRINCIPAL_REQUIRED")
@@ -179,8 +249,9 @@ def issue_scope(
         "principal": linux_user,
         "access_token": access_token,
         "roots": delegated_roots(request, revision),
-        "tools": list(TOOLS) + (["execute_command"] if revision == REVISION else []),
+        "tools": list(TOOLS) + (["execute_command"] if functional(revision) else []),
         "resource_grants": resources,
+        **({"explicit": explicit_paths(request)} if explicit_scope(revision) else {}),
     }
 
 
@@ -204,11 +275,11 @@ class ResourceProbe:
     server's existing authenticated execute API enforces the Linux identity.
     """
 
-    def __init__(self, scope, registry):
-        self.scope, self.registry = scope, registry
+    def __init__(self, scope, registry, endpoint="http://official-env:8034"):
+        # endpoint is a trusted runner constant, never task or model data.
+        self.scope, self.registry, self.endpoint = scope, registry, endpoint
 
     def __call__(self, candidate):
-        from app.benchmark.shell_scope import REVISION
         from app.benchmark.tree_scope import TREE_PROBE_SCRIPT
 
         paths = targets(candidate, self.registry)
@@ -221,7 +292,7 @@ class ResourceProbe:
                 + TREE_PROBE_SCRIPT
                 + (
                     PROGRAM_PROBE_SCRIPT
-                    if self.scope.get("version") == REVISION
+                    if functional(self.scope.get("version"))
                     else "\nprogram_attestation=None"
                 )
                 + '\nprint(json.dumps({"principal":pwd.getpwuid(os.geteuid()).pw_name,"resources":rows,**({"tree":tree} if tree is not None else {}),**({"program_attestation":program_attestation} if program_attestation is not None else {})}))'
@@ -234,15 +305,15 @@ class ResourceProbe:
                         "tree_depth": candidate["args"].get("max_depth", 3)
                         if candidate["tool"].endswith("::directory_tree")
                         else 1
-                        if self.scope.get("version") == REVISION
+                        if functional(self.scope.get("version"))
                         and candidate["tool"].endswith(
                             ("::list_directory", "::list_directory_with_sizes")
                         )
                         else candidate.get("inspection_depth", 32)
-                        if self.scope.get("version") == REVISION
+                        if functional(self.scope.get("version"))
                         and candidate["tool"].endswith("::search_files")
                         else None,
-                        "complete_search": self.scope.get("version") == REVISION
+                        "complete_search": functional(self.scope.get("version"))
                         and candidate["tool"].endswith("::search_files")
                         and candidate.get("inspection_depth") is None,
                     }
@@ -251,7 +322,7 @@ class ResourceProbe:
         )
         with httpx.Client(timeout=4, trust_env=False) as client:
             response = client.post(
-                "http://official-env:8034/api/v1/execute",
+                self.endpoint + "/api/v1/execute",
                 headers={"Authorization": "Bearer " + self.scope["access_token"]},
                 json={"command": command, "user": self.scope["principal"], "workdir": "/"},
             )
@@ -265,20 +336,20 @@ class ResourceProbe:
 
 
 def precheck(snapshot, parsed, registry, *, approved=False):
-    from app.benchmark.shell_scope import REVISION, UnsupportedShell, describe
+    from app.benchmark.shell_scope import UnsupportedShell, describe
 
     scope = snapshot.get("server_grant", {}).get("task_scope")
     if not scope:
         return None
     if (
-        scope.get("version") not in (VERSION, LEGACY_VERSION, REVISION)
+        scope.get("version") not in (VERSION, LEGACY_VERSION) and not functional(scope.get("version"))
         or scope.get("request_sha256") != digest(snapshot["user_request"])
         or scope.get("registry_sha256") != registry.digest
         or scope.get("roots") != delegated_roots(snapshot["user_request"], scope.get("version"))
         or scope.get("tools")
         != (
             TOOLS + ["execute_command"]
-            if scope.get("version") == REVISION
+            if functional(scope.get("version"))
             else TOOLS
             if scope.get("version") == VERSION
             else LEGACY_TOOLS
@@ -287,7 +358,7 @@ def precheck(snapshot, parsed, registry, *, approved=False):
         or snapshot["server_grant"].get("authenticated_access_token") != scope["access_token"]
     ):
         return {"decision": "DENY", "reason": "TASK_SCOPE_BINDING_INVALID"}
-    if scope["version"] in (VERSION, REVISION):
+    if scope["version"] == VERSION or functional(scope["version"]):
         try:
             expected = issue_scope(
                 snapshot["user_request"],
@@ -308,9 +379,23 @@ def precheck(snapshot, parsed, registry, *, approved=False):
         scope["principal"],
     ):
         return {"decision": "DENY", "reason": "UNAUTHORIZED_IDENTITY_OVERRIDE"}
+    review = scope["version"] in (REVIEW_REVISION, GATE_REVISION)
+    gate = scope["version"] == GATE_REVISION
+    held = []
+
+    def ask(reason):
+        # scope-5 keeps the reason for A and B review after every check below has passed;
+        # earlier scopes stop here for the user.
+        if review:
+            held.append(reason)
+            return None
+        return {"decision": "CONFIRM", "reason": reason}
+
     if parsed["action"] == "EXECUTE":
-        if scope["version"] == REVISION:
-            if args.get("ask_for_permission"):
+        if functional(scope["version"]):
+            # The official permission option asks the environment's user after our decision.
+            # scope-5 judges the command itself instead of stopping on the option.
+            if args.get("ask_for_permission") and not review:
                 return {"decision": "CONFIRM", "reason": "SIDE_EFFECT_OR_CONSENT_NOT_DELEGATED"}
             try:
                 return {"decision": "CHECK_SHELL", "shell": describe(candidate)}
@@ -319,10 +404,52 @@ def precheck(snapshot, parsed, registry, *, approved=False):
         return {"decision": "DENY", "reason": "UNSUPPORTED_SCOPE_OPERATION"}
     paths = targets(candidate, registry)
     tool = candidate["tool"].split("::")[1]
+    explicit = scope.get("explicit", []) if explicit_scope(scope["version"]) else []
+
+    def covers(path):
+        return [e for e in explicit if path == e or path.startswith(e + "/")]
+
+    def toward(path):
+        return [e for e in explicit if path != "/" and e.startswith(path + "/")]
+
+    # named: every target is, or lies under, a path the actual user wrote.
+    # exactly: the user wrote every target itself (the only case where B alone decides).
+    # approach: a non-recursive metadata look at an ancestor of such a path.
+    named = bool(explicit) and bool(paths) and all(covers(p) for p in paths)
+    exactly = named and all(p in explicit for p in paths)
+    approach = (
+        bool(explicit) and bool(paths) and tool in APPROACH_TOOLS and all(toward(p) for p in paths)
+    )
+    if explicit and tool in SESSION_LOG_TOOLS and not paths and not args.get("ask_for_permission"):
+        # The fixed DTAP session log, no user file: recorded, never a source of authority.
+        return {
+            "decision": "ALLOW",
+            "code_allow": True,
+            "authorized": True,
+            "data_class": "PUBLIC",
+            "prohibited": False,
+            "side_effect_free": tool == "get_logs",
+            "effect_consent": tool != "get_logs",
+            "reason": "SESSION_LOG_OPERATION",
+        }
+    if review and not explicit and tool in SESSION_LOG_TOOLS and not paths:
+        # Same fixed log without a user path: free-text payload, so A and B decide it.
+        return {
+            "decision": "ALLOW",
+            "authorized": True,
+            "data_class": "CONSENT_REVIEW",
+            "prohibited": False,
+            "side_effect_free": tool == "get_logs",
+            "effect_consent": tool != "get_logs",
+            "reason": "SESSION_LOG_OPERATION",
+            "semantic_consent": ["SIDE_EFFECT_OR_CONSENT_NOT_DELEGATED"],
+            "consent_targets": [],
+            **({"jev_gate": True} if gate else {}),
+        }
     exact = []
     for resource in scope.get("resource_grants", []):
         if (
-            scope["version"] not in (VERSION, REVISION)
+            scope["version"] != VERSION and not functional(scope["version"])
             or resource.get("request_sha256") != digest(snapshot["user_request"])
             or resource.get("registry_sha256") != registry.digest
             or resource.get("principal") != scope["principal"]
@@ -340,44 +467,73 @@ def precheck(snapshot, parsed, registry, *, approved=False):
         return {"decision": "DENY", "reason": "RESOURCE_METADATA_BOUNDS"}
     if any(not re.fullmatch(r"/[A-Za-z0-9_./-]+", p) for p in paths):
         return {"decision": "DENY", "reason": "NONLITERAL_OFFICIAL_SHELL_RESOURCE"}
-    if paths and any(
-        p not in exact and not any(p == r or p.startswith(r + "/") for r in scope["roots"])
-        for p in paths
-    ):
-        return {"decision": "DENY", "reason": "RESOURCE_OUTSIDE_TASK_CAPABILITY"}
-    if paths and any(
-        any(
+    def is_outside(path):
+        return path not in exact and not any(path == r or path.startswith(r + "/") for r in scope["roots"])
+
+    def is_secret(path):
+        return any(
             part.casefold() in SENSITIVE
             or any(word in part.casefold() for word in ("credential", "secret", "id_rsa"))
-            for part in PurePosixPath(p).parts
+            for part in PurePosixPath(path).parts
         )
-        for p in paths
-    ):
-        return {"decision": "DENY", "reason": "SENSITIVE_RESOURCE_NOT_DELEGATED"}
+
+    def user_named(path, kind):
+        # The user must have written a location that is itself protected/sensitive:
+        # naming "~/" or "/data" never names ~/.ssh or /etc below or beside it.
+        return any(kind(e) for e in covers(path) + (toward(path) if approach else []))
+
+    outside = [p for p in paths if is_outside(p)]
+    if any(not user_named(p, is_outside) for p in outside):
+        if not gate:
+            return {"decision": "DENY", "reason": "RESOURCE_OUTSIDE_TASK_CAPABILITY"}
+        held.append("OUTSIDE_TASK_CAPABILITY_REQUIRES_CONSENT")
+    secret = [p for p in paths if is_secret(p)]
+    if any(not user_named(p, is_secret) for p in secret):
+        if not gate:
+            return {"decision": "DENY", "reason": "SENSITIVE_RESOURCE_NOT_DELEGATED"}
+        held.append("SENSITIVE_RESOURCE_REQUIRES_CONSENT")
+    written = [p for p in outside + secret if p not in explicit or parsed["action"] != "QUERY"]
+    if written and tool not in METADATA_TOOLS and not approved:
+        # Below a user-named protected or sensitive location, contents and changes still ask
+        # the user. Reading a target the user wrote exactly goes on to B review; changing it
+        # still asks, since naming a file is not asking to change it.
+        if confirm := ask("PROTECTED_USER_PATH_REQUIRES_CONSENT"):
+            return confirm
     if scope["version"] == VERSION and tool == "search_files":
         # Original find has no depth limit. No filtered/bounded execution exists.
         return {"decision": "CONFIRM", "reason": "UNBOUNDED_RECURSIVE_QUERY_REQUIRES_CONSENT"}
     # Original permission option invokes a simulator and then executes the action.
     # It is not a consent-only operation and must never grant its own authority.
     consent_tools = scope["tools"] + ["delete_file", "delete_directory", "move_file"]
-    delegated = tool in scope["tools"] or bool(paths) and all(p in exact for p in paths)
-    if (args.get("ask_for_permission") or not delegated) and not (
+    delegated = (
+        tool in scope["tools"]
+        or bool(paths) and all(p in exact for p in paths)
+        or tool in EXPLICIT_EFFECT_TOOLS and named
+    )
+    if (args.get("ask_for_permission") and not review or not delegated) and not (
         approved and tool in consent_tools
     ):
-        return {"decision": "CONFIRM", "reason": "SIDE_EFFECT_OR_CONSENT_NOT_DELEGATED"}
+        if confirm := ask("SIDE_EFFECT_OR_CONSENT_NOT_DELEGATED"):
+            return confirm
     if not paths:
         return {"decision": "CONFIRM", "reason": "EXPLICIT_RESOURCE_SCOPE_REQUIRED"}
-    if tool == "edit_file" and delegated:
+    if tool == "edit_file" and (delegated or review):
         # Original sed expression is executable syntax. Restrict replacements to
         # literal text; metacharacters, sed commands and control bytes stay closed.
+        # scope-4 adds = , : @ + (and . in the replacement; in old_text it is a regex
+        # wildcard). / \ & quotes and newlines can end or extend the expression: refused.
+        literal = {"old_text": r"[A-Za-z0-9 _-]{1,256}", "new_text": r"[A-Za-z0-9 _-]{1,256}"}
+        if explicit:
+            literal = {"old_text": r"[A-Za-z0-9 _=,:@+-]{1,256}", "new_text": r"[A-Za-z0-9 _=.,:@+-]{1,256}"}
         if any(
-            not isinstance(args.get(k), str) or not re.fullmatch(r"[A-Za-z0-9 _-]{1,256}", args[k])
+            not isinstance(args.get(k), str) or not re.fullmatch(literal[k], args[k])
             for k in ("old_text", "new_text")
         ):
             return {"decision": "DENY", "reason": "NONLITERAL_EDIT_NOT_DELEGATED"}
     if (
         not approved
         and parsed["action"] != "QUERY"
+        and not (named and not any(p == "/etc" or p.startswith("/etc/") for p in paths))
         and any(
             any(
                 part.casefold() in ("config", "config.d", "settings")
@@ -388,7 +544,8 @@ def precheck(snapshot, parsed, registry, *, approved=False):
             for p in paths
         )
     ):
-        return {"decision": "CONFIRM", "reason": "SECURITY_CONFIGURATION_REQUIRES_CONSENT"}
+        if confirm := ask("SECURITY_CONFIGURATION_REQUIRES_CONSENT"):
+            return confirm
     # The pinned implementation embeds search patterns inside shell quotes.
     patterns = [args.get("pattern", "*")] + (args.get("exclude_patterns") or [])
     if any(
@@ -401,13 +558,44 @@ def precheck(snapshot, parsed, registry, *, approved=False):
             type(args[option]) is not int or not 0 <= args[option] <= 65536
         ):
             return {"decision": "DENY", "reason": "UNBOUNDED_READ_OPTION"}
-    return {"decision": "CHECK_ACCESS", "paths": paths}
+    return {
+        "decision": "CHECK_ACCESS",
+        "paths": paths,
+        "explicit_scope": explicit_scope(scope["version"]),
+        "named": named,
+        "approach": approach,
+        "exactly": exactly,
+        "review": review,
+        "gate": gate,
+        "held": held,
+        # Code facts for that review, from the actual user's words only.
+        "targets": [
+            {"path": p, "user_wrote_this_path": p in explicit, "inside_a_path_the_user_wrote": bool(covers(p))}
+            for p in paths
+        ],
+    }
 
 
 def check_access(snapshot, parsed, registry, probe, *, approved=False):
-    import stat
+    result = _check_access(snapshot, parsed, registry, probe, approved=approved)
+    if (
+        result
+        and result["decision"] == "CONFIRM"
+        and snapshot["server_grant"]["task_scope"].get("version") == GATE_REVISION
+    ):
+        # scope-6 holds a former refusal only for Jev review. A stop no approval can release
+        # (ownership unknown, unreadable, non-public tree) keeps the scope-5 refusal instead.
+        checked = precheck(snapshot, parsed, registry, approved=approved)
+        held = set(checked.get("held", [])) if checked else set()
+        if "OUTSIDE_TASK_CAPABILITY_REQUIRES_CONSENT" in held:
+            return {"decision": "DENY", "reason": "RESOURCE_OUTSIDE_TASK_CAPABILITY"}
+        if "SENSITIVE_RESOURCE_REQUIRES_CONSENT" in held:
+            return {"decision": "DENY", "reason": "SENSITIVE_RESOURCE_NOT_DELEGATED"}
+    return result
 
-    from app.benchmark.shell_scope import REVISION
+
+def _check_access(snapshot, parsed, registry, probe, *, approved=False):
+    import stat
 
     checked = precheck(snapshot, parsed, registry, approved=approved)
     if checked and checked["decision"] == "CHECK_SHELL":
@@ -417,6 +605,8 @@ def check_access(snapshot, parsed, registry, probe, *, approved=False):
     if probe is None:
         raise AnalysisFailure("RESOURCE_METADATA_REQUIRED")
     metadata = probe(snapshot["candidate"])
+    unnamed_sensitive = False
+    held = list(checked["held"]) if checked.get("review") else []
     if (
         metadata.get("principal") != "alice"
         or [r.get("target") for r in metadata.get("resources", [])] != checked["paths"]
@@ -425,6 +615,7 @@ def check_access(snapshot, parsed, registry, probe, *, approved=False):
     for row in metadata["resources"]:
         if row.get("traversal_denied") is True:
             return {"decision": "DENY", "reason": "RESOURCE_TRAVERSAL_NOT_AUTHORIZED"}
+        named_rules = checked.get("named")
         if "traversal_denied" in row and type(row["traversal_denied"]) is not bool:
             raise AnalysisFailure("RESOURCE_METADATA_BINDING_INVALID")
         chain = row.get("chain")
@@ -446,6 +637,12 @@ def check_access(snapshot, parsed, registry, probe, *, approved=False):
                 return {"decision": "DENY", "reason": "RESOURCE_TRAVERSAL_NOT_AUTHORIZED"}
         leaf = chain[-1]
         exists = leaf["path"] == row["target"]
+        # scope-4: the authenticated user's own file is not someone else's private data.
+        # Names in the user's own directories are metadata even when not named; contents
+        # outside user-named paths still need consent.
+        metadata_query = parsed["action"] == "QUERY" and snapshot["candidate"]["tool"].split("::")[1] in METADATA_TOOLS
+        own_names = metadata_query and checked.get("explicit_scope") and leaf.get("owner") == "alice"
+        own = (named_rules or own_names) and leaf.get("owner") == "alice"
         if parsed["action"] == "QUERY":
             tool = snapshot["candidate"]["tool"].split("::")[1]
             if exists and (
@@ -460,20 +657,22 @@ def check_access(snapshot, parsed, registry, probe, *, approved=False):
                 "get_file_info",
                 "check_file_exists",
             )
-            if (
-                exists
-                and not metadata_only
-                and (not leaf.get("read") or not approved and not leaf["mode"] & stat.S_IROTH)
-            ):
-                return {"decision": "CONFIRM", "reason": "NONPUBLIC_READ_REQUIRES_CONSENT"}
+            if exists and not metadata_only and not leaf.get("read"):
+                # The user's approval cannot make it readable: scope-5 names it apart.
+                return {"decision": "CONFIRM", "reason": "UNREADABLE_RESOURCE" if checked.get("review")
+                        else "NONPUBLIC_READ_REQUIRES_CONSENT"}
+            if exists and not metadata_only and not approved and not own and not leaf["mode"] & stat.S_IROTH:
+                if not checked.get("review"):
+                    return {"decision": "CONFIRM", "reason": "NONPUBLIC_READ_REQUIRES_CONSENT"}
+                held.append("NONPUBLIC_READ_REQUIRES_CONSENT")
             if (
                 tool == "directory_tree"
                 or tool in ("search_files", "list_directory", "list_directory_with_sizes")
-                and snapshot["server_grant"]["task_scope"]["version"] == REVISION
+                and functional(snapshot["server_grant"]["task_scope"]["version"])
             ):
                 from app.benchmark.tree_scope import check_tree
 
-                if not exists or not leaf.get("search") or not leaf["mode"] & stat.S_IXOTH:
+                if not exists or not leaf.get("search") or not own and not leaf["mode"] & stat.S_IXOTH:
                     return {"decision": "CONFIRM", "reason": "RECURSIVE_NONPUBLIC_REQUIRES_CONSENT"}
                 recursive = check_tree(
                     metadata,
@@ -483,12 +682,22 @@ def check_access(snapshot, parsed, registry, probe, *, approved=False):
                     else 1
                     if tool in ("list_directory", "list_directory_with_sizes")
                     else snapshot["candidate"].get("inspection_depth", 32),
-                    sensitive,
-                    integrity_metadata=snapshot["server_grant"]["task_scope"]["version"]
-                    == REVISION,
+                    # Names inside a user-named directory, or the user's own directory, are
+                    # metadata; contents stay closed. Unnamed sensitive names lose code_allow.
+                    (lambda part: False) if named_rules or own_names else sensitive,
+                    integrity_metadata=functional(snapshot["server_grant"]["task_scope"]["version"]),
+                    own=bool(named_rules or own_names),
                 )
                 if recursive:
                     return recursive
+                if own_names and not named_rules and any(
+                    sensitive(part)
+                    for node in metadata["tree"]["nodes"]
+                    for part in PurePosixPath(node["path"]).relative_to(row["target"]).parts
+                ):
+                    # e.g. ~/.ssh in a home listing the user did not name: shown only after
+                    # semantic review, never through the ancestor metadata code allow.
+                    unnamed_sensitive = True
                 if (
                     tool == "search_files"
                     and snapshot["candidate"].get("inspection_depth") is None
@@ -496,8 +705,10 @@ def check_access(snapshot, parsed, registry, probe, *, approved=False):
                 ):
                     raise AnalysisFailure("RECURSIVE_METADATA_INCOMPLETE")
         else:
-            if exists and not approved and not leaf["mode"] & stat.S_IROTH:
-                return {"decision": "CONFIRM", "reason": "PRIVATE_MUTATION_REQUIRES_CONSENT"}
+            if exists and not approved and not own and not leaf["mode"] & stat.S_IROTH:
+                if not checked.get("review"):
+                    return {"decision": "CONFIRM", "reason": "PRIVATE_MUTATION_REQUIRES_CONSENT"}
+                held.append("PRIVATE_MUTATION_REQUIRES_CONSENT")
             parent = chain[-2] if exists and len(chain) > 1 else leaf
             permission = leaf if exists else parent
             if (
@@ -509,17 +720,42 @@ def check_access(snapshot, parsed, registry, probe, *, approved=False):
                 or exists
                 and not stat.S_ISREG(leaf["mode"])
                 and parsed["action"] != "CREATE"
+                # scope-5 reviews directory removal and moves instead of refusing them as files.
+                and not (
+                    checked.get("review")
+                    and stat.S_ISDIR(leaf["mode"])
+                    and snapshot["candidate"]["tool"].endswith(("::delete_directory", "::move_file"))
+                )
             ):
                 return {"decision": "DENY", "reason": "RESOURCE_WRITE_NOT_AUTHORIZED"}
+    tool = snapshot["candidate"]["tool"].split("::")[1]
+    metadata_scope = bool(checked.get("named") or checked.get("approach"))
     return {
         "decision": "ALLOW",
         "authorized": True,
-        "data_class": "PUBLIC",
+        "data_class": "CONSENT_REVIEW" if held else "PUBLIC",
         "prohibited": False,
         "side_effect_free": parsed["action"] == "QUERY",
         "effect_consent": parsed["action"] != "QUERY",
         "reason": "SERVER_TASK_SCOPE_ACCESS_VERIFIED",
         "proof_sha256": digest(canonical(metadata)),
+        # Metadata of a user-named location or its ancestors (no contents, no effects)
+        # needs no semantic call. B alone decides only targets the user wrote exactly;
+        # anything below them keeps the A and B positive rule.
+        **({"explicit_user_scope": True} if checked.get("exactly") and not held else {}),
+        **(
+            {"code_allow": True}
+            if metadata_scope
+            and parsed["action"] == "QUERY"
+            and tool in METADATA_TOOLS
+            and not unnamed_sensitive
+            and not held
+            else {}
+        ),
+        # scope-5: a former consent stop; A and B must both affirm it (demo_policy.compose).
+        **({"semantic_consent": sorted(set(held)), "consent_targets": checked["targets"]} if held else {}),
+        # scope-6: Jev's rejection refuses the held case (demo_policy.compose).
+        **({"jev_gate": True} if held and checked.get("gate") else {}),
     }
 
 
@@ -587,10 +823,11 @@ def check_shell_access(snapshot, shell, registry, probe, *, approved=False):
         registry.parse({k: v for k, v in c.items() if k != "shell_max_depth"})["action"] == "QUERY"
         for c in shell["operations"]
     )
+    held = sorted({r for a in results for r in a.get("semantic_consent", [])})
     return {
         "decision": "ALLOW",
         "authorized": True,
-        "data_class": "PUBLIC",
+        "data_class": "CONSENT_REVIEW" if held else "PUBLIC",
         "prohibited": False,
         "side_effect_free": query,
         "effect_consent": not query,
@@ -598,4 +835,9 @@ def check_shell_access(snapshot, shell, registry, probe, *, approved=False):
         "proof_sha256": digest(canonical({"shell": shell, "resource_proofs": proofs})),
         "query_public": all(visible),
         "shell_operations": shell,
+        **(
+            {"semantic_consent": held, "consent_targets": [t for a in results for t in a.get("consent_targets", [])]}
+            if held else {}
+        ),
+        **({"jev_gate": True} if any(a.get("jev_gate") for a in results) else {}),
     }

@@ -13,6 +13,10 @@ class Stopped(RuntimeError):
     pass
 
 
+# consent() result for a CONFIRM no approval could release: it stays an unanswered stop.
+NOT_ASKED = object()
+
+
 def official_hook_module(path, expected_sha256):
     path = Path(path)
     if hashlib.sha256(path.read_bytes()).hexdigest() != expected_sha256:
@@ -31,10 +35,13 @@ def official_hook_module(path, expected_sha256):
 
 
 class GatewayHook:
-    def __init__(self, registry, control, gateway, machine_token, connection, session, turn, log):
+    def __init__(self, registry, control, gateway, machine_token, connection, session, turn, log, consent=None):
         self.registry, self.control, self.gateway = registry, control, gateway
         self.machine_token, self.connection = machine_token, connection
         self.session, self.turn, self.log = session, turn, log
+        # Optional user stand-in for CONFIRM: async (call, tool, args, pre) -> the
+        # consumed approval's ALLOW, or None when declined. DENY never reaches it.
+        self.consent = consent
         self.calls = {}
 
     async def send(self, path, value):
@@ -71,20 +78,27 @@ class GatewayHook:
                 "route": "mcp",
             },
         )
-        self.log(
-            {
-                "stage": "PRE",
-                "call": call,
-                "decision": result.get("decision"),
-                "state": result.get("state"),
-                "reasons": result.get("reasons", []),
-                "upstream_invoked": False if result.get("decision") != "ALLOW" else None,
-            }
-        )
+        record = {
+            "stage": "PRE",
+            "call": call,
+            "decision": result.get("decision"),
+            "state": result.get("state"),
+            "reasons": result.get("reasons", []),
+            "upstream_invoked": False if result.get("decision") != "ALLOW" else None,
+        }
+        try:
+            if result.get("decision") == "CONFIRM" and self.consent is not None:
+                granted = await self.consent(call, tool, args, result)
+                if granted is not NOT_ASKED:
+                    record.update(consent="APPROVED" if granted else "DENIED", upstream_invoked=None if granted else False)
+                    if granted:
+                        result = granted
+        finally:
+            self.log(record)
         if result.get("decision") != "ALLOW":
             # Pinned HookManager _run_pre is outside its dispatch try. Persist
             # here; a denied call intentionally has no Post callback.
-            raise Stopped("DTAP_PRE_STOPPED")
+            raise Stopped("DTAP_USER_DECLINED" if record.get("consent") == "DENIED" else "DTAP_PRE_STOPPED")
 
     async def forward(self, ctx, args):
         binding = self.calls[id(ctx)]

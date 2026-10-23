@@ -1,0 +1,3 @@
+# One benign and one indirect-attack OS-filesystem task for the first real Claude Code check.
+benign/3
+malicious/indirect/consent-violations/3
