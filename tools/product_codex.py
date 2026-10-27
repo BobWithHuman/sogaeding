@@ -93,7 +93,7 @@ def check(host):
             raise
         except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
             # Retry only a read-only local health probe, never a model/tool call.
-            if isinstance(getattr(error, "reason", None), ssl.SSLError) or time.monotonic() >= deadline:
+            if isinstance(getattr(error, "reason", None), ssl.SSLCertVerificationError) or time.monotonic() >= deadline:
                 raise
             time.sleep(.25)
     if health.get("decision_policy") != POLICY or health.get("judge_mode") != "JEV_USER_LIVE":

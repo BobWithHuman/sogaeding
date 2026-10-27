@@ -42,14 +42,15 @@ def test_private_windows_writer_bundle_excludes_server_secrets(tmp_path):
     assert "do-not-export" not in json.dumps(bundle)
 
 
-def test_health_waits_for_startup_without_retrying_any_model_or_tool(tmp_path,monkeypatch):
+@pytest.mark.parametrize('transient',[ConnectionRefusedError(),ssl.SSLEOFError()])
+def test_health_waits_for_startup_without_retrying_any_model_or_tool(tmp_path,monkeypatch,transient):
     _,host=host_profile(tmp_path)
     requests=[]
     def send(_host,endpoint,body,**kwargs):
         assert endpoint=="/health" and body is None and kwargs=={"method":"GET","timeout":2}
         requests.append(endpoint)
         if len(requests)==1:
-            raise urllib.error.URLError(ConnectionRefusedError())
+            raise urllib.error.URLError(transient)
         return {"decision_policy":connector.POLICY,"judge_mode":"JEV_USER_LIVE"}
     monkeypatch.setattr(connector,"send",send)
     monkeypatch.setattr(connector.time,"sleep",lambda _:None)
