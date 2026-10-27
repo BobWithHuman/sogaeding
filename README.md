@@ -6,7 +6,7 @@
 
 ## 처음 설치
 
-준비물: Git, PowerShell 5.1 이상, Docker Desktop(Linux containers), Python 3.12 이상, 로그인된 Codex CLI, 본인의 Jev API 키 파일. Codex 앱에 번들된 Python이 있으면 스크립트가 사용하며, 일반 PC는 설치한 Python을 사용합니다. 브라우저 조회만 할 때는 Codex 실행 단계가 필요 없습니다.
+준비물: Git, PowerShell 5.1 이상, Docker Desktop(Linux containers), Python 3.12 이상, 로그인된 Codex CLI, 본인의 Jev API 키 파일. Codex 앱에 번들된 Python이 있으면 스크립트가 사용하며, 일반 PC는 설치한 Python을 사용합니다. 브라우저 조회만 할 때는 Codex 실행 단계가 필요 없습니다. 검증한 CLI는 Windows native codex-cli 0.154.0입니다. `codex.exe`가 PATH에 없으면 check/start에 `-CodexPath C:\설치경로\codex.exe`를 지정합니다.
 
 키는 저장소 밖의 파일에 보관합니다. 아래 `C:\Private\jev.api-key`는 경로 예시이며 실제 키를 README·Git·프롬프트에 입력하지 않습니다.
 
@@ -85,3 +85,6 @@ ASK 흐름은 `reports/ask-demo.md`를 대상으로 요청해 확인할 수 있�
 과거 실험용 Compose14개·오래된 실행 도구·중복 문서는 Git 추적에서 제외했습니다. 기존 PC의 파일과 실행 원자료는 로컬에 보존하고, 이전 commit `0744fc0`에서도 복구할 수 있습니다. 팀원이 작성/수정한 DTAP 코드·과업 목록·결과와 필요한 의존 파일은 보존했습니다. `src/app/benchmark`, `harness/dtap-cc`, `docs/handoffs/WP-DTAP-CC-01`은 별도 평가 자료이며 제품 설치 과정에서 실행하지 않습니다.
 
 평가 코드 전체가 최신 ASK 제품과 다시 검증됐다는 뜻은 아닙니다. 과거 결과를 현재 수정본의 새 측정으로 표현하지 않습니다. 실제 키·DB·private 인증서·사용자 원문·artifacts·개인 설정은 공유하지 않습니다.
+
+
+재현 확인: 같은 Windows PC에서 기존 설정을 쓰지 않는 새 clone·새 자격·새 volume으로 빌드/prepare/up/check, 실제 MCP 읽기·보호 쓰기 거부·대시보드 집계를 확인했습니다. 최초 제품 시험195개 통과/5개 skip, 최종 관련50개 통과입니다. 실제 다른 물리 PC와 새 clone의 실제 모델/Jev 호출은 수행하지 않았습니다. 자세한 범위는 백엔드 기준서의 검증 절을 참고합니다.

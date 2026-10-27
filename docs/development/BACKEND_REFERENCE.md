@@ -285,7 +285,7 @@ cd C:\sogaeding
 
 대시보드는 `http://127.0.0.1:8150`. 프롬프트는 사용자가 직접 입력한다. start 전후에 자동 모델 시험을 돌리지 않는다. 코드 변경 뒤 엔진 Python 프로세스를 재시작하고 Codex 연결기도 새로 열어야 최신 코드가 적용된다. 종료는 Codex exit, 대시보드만 중지는 dashboard_local.ps1 -Mode stop, 엔진 전체 종료는 product_codex.ps1 -Mode down이다. 장부 volume은 보존한다.
 
-다른 PC에는 이 PC의 키·토큰·DB·volume을 보내지 않는다. 해당 PC에서 키 경로를 제공하고 새 runtime을 prepare한다. Windows DACL, 로컬 CA, 역할별 TLS가 필요하다. 현재 스크립트는 저장소의 단일 Dockerfile로 `with-human-engine:local`을 빌드한다. prepare가 빌드를 호출하므로 다른 개발자 PC의 이미지를 복사하지 않는다. requirements.txt는 실행 의존성의 버전/hash를 고정하고, tools/minimal_runtime.py가 실제 native library와 패키지 목록을 포함한 최소 이미지를 만든다. 제품 Compose는 compose.yaml 하나다. 선택적 시험은 같은 Dockerfile의 dev target을 사용한다. 이 문서 작성 중 새 clone 검증을 진행하고 있으며 최종 확인 결과는 아래 검증 근거에 갱신한다.
+다른 PC에는 이 PC의 키·토큰·DB·volume을 보내지 않는다. 해당 PC에서 키 경로를 제공하고 새 runtime을 prepare한다. Windows DACL, 로컬 CA, 역할별 TLS가 필요하다. 현재 스크립트는 저장소의 단일 Dockerfile로 `with-human-engine:local`을 빌드한다. prepare가 빌드를 호출하므로 다른 개발자 PC의 이미지를 복사하지 않는다. requirements.txt는 실행 의존성의 버전/hash를 고정하고, tools/minimal_runtime.py가 실제 native library와 패키지 목록을 포함한 최소 이미지를 만든다. 제품 Compose는 compose.yaml 하나다. 선택적 시험은 같은 Dockerfile의 dev target을 사용한다. 새 clone·새 volume·새 자격으로 준비/기동/연결기/대시보드 재현을 확인했다. 같은 Windows PC의 격리 환경 검증이며 실제 다른 물리 PC/다른 OS 검증은 아니다.
 
 ## 8. Git 공유 범위와 확인 근거
 
@@ -297,6 +297,23 @@ API 공유의 핵심은 다음 소스와 이 문서다. 파일 내용 확인 없
 - 문서: 이 기준서와 루트 README. 중복된 이전 인계 문서는 Git에서 제외하고 로컬/이전 commit에 보존한다.
 - 관련 시험: ASK·dashboard·Jev 설정/사용량 회귀. 선택한 실행 구성에는 필요한 의존성 잠금과 실행 파일을 같이 검토한다.
 
-제외: runtime·실제 키/토큰·인증서 private key·DB·사용자 원문·실행 artifacts·DTAP 산출물·무관한 benchmark 변경·기존 미커밋 작업·개인 Codex 설정. 현재 원격은 BobWithHuman/sogaeding임을 확인했다. 이 문서 작성 시점에는 이번 ASK/대시보드 코드를 아직 새로 push하지 않았다.
+제외: runtime·실제 키/토큰·인증서 private key·DB·사용자 원문·실행 artifacts·DTAP 산출물·무관한 benchmark 변경·기존 미커밋 작업·개인 Codex 설정. 현재 원격은 BobWithHuman/sogaeding임을 확인했다. 현재 공유에는 ASK·이유 설명·대시보드·Codex 연결기·재현 가능한 빌드/실행 구성이 포함된다. 원격 반영은 해당 commit의 GitHub 상태를 확인한다.
 
-검증 근거는 로컬 artifacts/dashboard-integration-20261027-01에 보관한다. 기존 무제한/사용량/응답 검증190개, 이번 이유 전달·ASK/조회/엔진/연결기99개 시험 통과(겹치는 시험 수를 합산해 독립 시험 수로 표현하지 않음). 실제 사용자 성공 기록은 ASK initial → RECHECKED/ALLOW → OBSERVED이며, 이전 한도 소진 실패 기록도 그대로 보존했다. 변경된 이유 문구에 대한 실제 사람 UI 재시험은 별도다. 새 clone 패키징 검증은 현재 진행 중이며 결과를 아래에 갱신한다.
+검증 근거는 로컬 artifacts/dashboard-integration-20261027-01에 보관한다. 기존 무제한/사용량/응답 검증190개, 이번 이유 전달·ASK/조회/엔진/연결기99개 시험 통과(겹치는 시험 수를 합산해 독립 시험 수로 표현하지 않음). 실제 사용자 성공 기록은 ASK initial → RECHECKED/ALLOW → OBSERVED이며, 이전 한도 소진 실패 기록도 그대로 보존했다. 변경된 이유 문구에 대한 실제 사람 UI 재시험은 별도다. 새 clone 패키징 검증 결과는 다음 절에 기록했다.
+
+
+## 9. 최소 배포·새 clone 재현 결과
+
+2026-10-27 코드 기준 `81a7e42`를 별도 폴더에 실제 clone하여 다음을 확인했다. 원래 PC의 runtime·키·DB·인증서를 복사하지 않았다. 새 이름 clone-check, 새 volume·역할 자격·CA와 별도 포트8230/8240/8250을 사용했다. provider용 키는 의도적으로 합성 파일을 썼으며 실제 provider 요청은0회다.
+
+- 단일 Dockerfile의 runtime target: cache 없이 공식 digest 기반 이미지와 해시 고정 실행 패키지30개를 설치해 빌드 성공. 설치 내역은 실제 빌드 로그와 고정 requirements.txt를 기준으로 한다.
+- 동일 Dockerfile의 dev target과 README 명령: 제품 회귀195개 통과/5개 skip. skip2개는 제거한 과거 control 모듈용 검사, 3개는 별도 TLS 통합 환경용 시험이다. 이후 소규모 수정의 영향 범위50개도 통과했다. 겹치는 시험 수를 합산하지 않는다.
+- prepare→up→check에서 새 PC 전용 자격 생성, 설치된 Codex의 설정 파싱과 엔진 TLS READY 확인. 실제 actor 모델은 호출하지 않았다.
+- 새 clone의 실제 stdio MCP 연결기→Gateway→private mTLS /authz→Upstream을 거쳐 docs/release.md 읽기 OBSERVED 확인. 합성 .env 쓰기는 PROTECTED_RESOURCE DENY이며 파일 생성0, upstream 시도는 읽기1개뿐이다.
+- 새 대시보드 API와 브라우저에 후보2개/ALLOW1/DENY1/성공1 집계 확인. 최초 사용량 장부가 없을 때 실제 사용량은 미수집으로 두면서 무제한 설정은 표시한다.
+- 기동 중 일시적인 TLS EOF는 기존15초 health 대기 내에서만 재시도한다. 인증서 검증 실패/HTTP 인증 오류는 즉시 거부하고, 모델/도구 실행을 자동 재시도하지 않는다.
+- 별도 AI 읽기 전용 검토에서 배포 경계·import closure·최소 수정에 핵심 미해결 결함을 찾지 못했다. 독립적인 공식 보안 진단이나 새 이미지 CVE 검사 통과를 뜻하지 않는다.
+
+과거 Compose14개 등180개 파일은 Git 추적만 제외했으며 원래 작업 폴더와 로컬 백업을 보존했다. 공유 파일은370개에서216개로 줄었고, 새 백엔드/연결기/시험 파일을 추가한 순감 수치다. YAML은 제품 compose.yaml과 Gateway의 agentgateway/config.yaml 두 개뿐이다. 팀원 변경92개와 DTAP 참조 의존 파일은 보존했으며, DTAP을 새 엔진으로 다시 실행한 것은 아니다.
+
+증거: 로컬 artifacts/package-20261027-01의 clone-smoke-result.json, clone-unit-tests.log, final-related-tests.xml, staged-check.json, cleanup-plan.json, fresh-clone-dashboard.png. 증거의 로컬 경로는 공유 저장소에 runtime 자료를 넣었다는 뜻이 아니다. 검증용 서비스는 종료하고 새 장부/volume은 로컬에 보존한다.
