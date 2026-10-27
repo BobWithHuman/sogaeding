@@ -29,14 +29,16 @@ def test_unlimited_requires_explicit_mode_and_keeps_auditable_attempts(tmp_path,
     assert not replace(settings,unlimited='yes').authorized()
     assert not replace(settings,request_limit=100).authorized()
     client=JevClient(settings)
+    engine=engine_factory()
+    engine.policy_router.client=client
+    empty=Projection(engine,'m').ledger()
+    assert empty['unlimited'] is True and empty['requests'] is None and empty['status']=='UNAVAILABLE'
     for i in range(105):
         client._claim(str(i),'A')
     with sqlite3.connect(settings.budget_path) as db:
         assert db.execute('SELECT count(*),sum(input_reserved) FROM jev_attempts').fetchone()==(105,0)
         binding=json.loads(db.execute('SELECT binding FROM jev_policy').fetchone()[0])
         assert binding['unlimited'] is True and binding['input_token_limit'] is None
-    engine=engine_factory()
-    engine.policy_router.client=client
     ledger=Projection(engine,'m').ledger()
     assert ledger['status']=='AVAILABLE' and ledger['requests']==105 and ledger['unlimited'] is True
     assert ledger['request_limit'] is None and ledger['input_reservation_remaining'] is None

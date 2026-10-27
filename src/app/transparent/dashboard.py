@@ -189,6 +189,9 @@ class Projection:
         empty={k:None for k in ('requests','input_tokens_actual','output_tokens_actual','input_tokens_reserved','request_limit','requests_remaining','input_reservation_limit','input_reservation_remaining')}
         value={**empty,'scope':'RUNTIME_LEDGER','status':'UNAVAILABLE'}
         settings=getattr(getattr(self.engine.policy_router,'client',None),'settings',None)
+        value.update(unlimited=getattr(settings,'unlimited',False),
+                     request_limit=getattr(settings,'request_limit',None),
+                     input_reservation_limit=getattr(settings,'input_token_limit',None))
         path=getattr(settings,'budget_path',None)
         if path is None or Path(path).is_symlink() or not Path(path).is_file():
             return value
