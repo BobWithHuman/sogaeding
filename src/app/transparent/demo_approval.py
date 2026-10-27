@@ -4,7 +4,6 @@ The original CONFIRM decision/reason is retained. A fresh, human-issued 30-secon
 authorization follows a maximum 600-second review period; analysis time is not
 rewritten. Reservation and approval consumption share one SQLite transaction.
 """
-import json
 import time
 
 from app.common import canonical, digest, mask
@@ -40,7 +39,7 @@ def validate(e, db, machine, row, token=None):
         request = canonical({"actual_user_turns_chronological": prompts, "latest_turn": len(prompts)-1})
         sources = [e.open(x[0]) for x in db.execute("SELECT body FROM sources WHERE session=? ORDER BY rowid", (row["session"],))]
     actual_grant = digest(canonical({"grant": e.grant, "policy": e.policy} if e.policy_router else e.grant))
-    reason = json.loads(row["reason"])
+    reason = e.read_reason(row["reason"])
     if (context != (row["intent_connection"], row["intent_request"], row["intent_source"])
             or row["intent_grant"] != e.grant_hash or actual_grant != e.grant_hash or row["intent_policy"] != e.policy
             or reason.get("policy") != e.policy or reason.get("grant_hash") != e.grant_hash
@@ -146,7 +145,8 @@ def pending(e, machine):
     return {"version": "demo-confirm-1", "pending": output, "truncated": truncated}
 
 
-def approve(e, machine, call, approve_choice, proof):
+def approve(e, machine, call, approve_choice, proof, *, actor=None):
+    from app.transparent.security_audit import record
     with e.db() as db:
         row = joined(db, call)
         if state(e, db, machine, row) != "PENDING" or not isinstance(proof, str) or proof != row["binding"]:
@@ -155,9 +155,11 @@ def approve(e, machine, call, approve_choice, proof):
         if db.execute("SELECT 1 FROM calls WHERE session=? AND id<>? AND state IN ('READY','EXECUTING','UNKNOWN','ANALYZING')", (row["session"], call)).fetchone():
             raise Rejected("PRIOR_RESULT_UNOBSERVED")
         if not approve_choice:
+            record(e, db, 'APPROVAL', actor or machine, call, 'REJECTED')
             db.execute("UPDATE calls SET state='DENIED' WHERE id=? AND state='CONFIRM'", (call,))
             e.audit(db, "APPROVAL", "HUMAN_REJECTED", call)
             return {"state": "DENIED"}
+        record(e, db, 'APPROVAL', actor or machine, call, 'APPROVED')
         db.execute("INSERT INTO approvals(call,hash,turn,policy) VALUES(?,?,?,?)", (call, row["hash"], row["turn"], e.policy))
         db.execute("UPDATE demo_confirmations SET approved_at=? WHERE call=? AND approved_at IS NULL", (time.time(), call))
         db.execute("UPDATE calls SET state='APPROVED' WHERE id=? AND state='CONFIRM'", (call,))
@@ -183,6 +185,6 @@ def resume(e, machine, session, tool, args, token, rpc_hash):
         if changed.rowcount != 1 or db.execute("UPDATE demo_confirmations SET resumed=1 WHERE call=? AND resumed=0", (row["id"],)).rowcount != 1:
             raise Rejected("APPROVAL_BINDING_OR_REPLAY")
         reason["demo_approval"] = {"binding": row["binding"], "approved_at": row["approved_at"], "original_decision": "CONFIRM"}
-        db.execute("UPDATE calls SET state='READY',reason=? WHERE id=? AND state='APPROVED'", (canonical(reason), row["id"]))
+        db.execute("UPDATE calls SET state='READY',reason=? WHERE id=? AND state='APPROVED'", (e.write_reason(reason), row["id"]))
         e._forward_in_db(db, machine, row["id"], connection_token=token)
         return row["id"]

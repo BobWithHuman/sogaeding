@@ -17,10 +17,21 @@ from fastapi.responses import JSONResponse, Response
 from jsonschema import Draft202012Validator
 
 from app.common import CONTRACT_DIR, canonical, digest, strict_json
+from app.security_headers import apply_security_headers
 from app.storage.auth_audit import AuthAudit
+from app.transparent import security_audit
 from app.transparent.engine import Engine, Rejected
+from app.transparent.operator_access import OperatorAccess, valid_token
+from app.transparent.runtime_lock import lease
 
 RUNTIME = Path(os.environ.get("HOOKGW_RUNTIME", "/runtime"))
+
+
+def local_request_ok(request):
+    if len(request.headers.getlist('host')) != 1 or request.url.hostname not in {'127.0.0.1','localhost','::1','control'}:
+        return False
+    origins = request.headers.getlist('origin')
+    return not origins or len(origins) == 1 and origins[0] == request.url.scheme + '://' + request.headers['host']
 REJECTION_CODES = {
     "AUTHENTICATION_FAILED", "AUTH_RATE_LIMIT", "CONNECTION_BINDING", "CONNECTION_OR_SESSION_EXPIRED",
     "FORWARD_SNAPSHOT_STALE", "SESSION_OR_TURN_MISMATCH", "PRIOR_RESULT_UNOBSERVED",
@@ -51,26 +62,65 @@ def ticket(call, body):
     return encoded + "." + sig
 
 
+def bearer_token(request):
+    """Use the same unambiguous ASCII credential syntax on both listeners."""
+    values = request.headers.getlist("authorization")
+    if len(values) != 1:
+        return ""
+    value = values[0]
+    try:
+        value.encode("ascii")
+    except UnicodeEncodeError:
+        return ""
+    scheme, separator, token = value.partition(" ")
+    return token if scheme == "Bearer" and separator and token and not any(c.isspace() for c in token) else ""
+
+
 def create_app(engine, keys, *, max_body_bytes=131072):
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.engine = engine
     machine = keys["machine_id"]
+    if not valid_token(keys["machine"]):
+        raise ValueError("MACHINE_CREDENTIAL_INVALID")
     event_schema = Draft202012Validator(json.loads((CONTRACT_DIR / "spec5.schema.json").read_text(encoding="utf-8")))
     app.state.auth_audit = AuthAudit(str(engine.path) + ".auth")
+    operators = OperatorAccess(machine, keys["human"], keys.get("operators", ()))
 
-    def auth(request, role):
+    @app.middleware("http")
+    async def no_store(request, call_next):
+        if not local_request_ok(request):
+            try:
+                with engine.db() as db:
+                    security_audit.record(engine, db, 'ACCESS_DENIED', 'untrusted-request', 'local-boundary', 'LOCAL_BOUNDARY_REJECTED')
+                response = JSONResponse({'code':'LOCAL_BOUNDARY_REJECTED'}, status_code=403)
+            except Exception:
+                response = JSONResponse({'code':'ADAPTER_UNAVAILABLE'}, status_code=503)
+        else:
+            response = await call_next(request)
+        apply_security_headers(response.headers, https=request.url.scheme == "https")
+        return response
+
+    def auth(request, role, permission=None):
         request.state.auth_surface = "HUMAN" if role == "human" else "SERVICE"
+        token = bearer_token(request)
+        principal = operators.authenticate(token) if role == "human" else None
+        authenticated = bool(token) and (principal is not None if role == "human" else hmac.compare_digest(token.encode("ascii"), keys[role].encode("ascii")))
         # Session audit eviction must not reset the durable authentication limit.
+        # Read failure still fails closed, but another actor cannot lock out valid credentials.
         path = Path(app.state.auth_audit.path)
+        failures = 0
         if path.exists():
             with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=1) as db:
-                failures = db.execute("SELECT coalesce(sum(count),0) FROM auth_failures WHERE last_at>?", (time.time()-60,)).fetchone()[0]
+                failures = db.execute("SELECT coalesce(sum(count),0) FROM auth_failures WHERE surface=? AND status IN (401,403) AND last_at>?",
+                                      (request.state.auth_surface, time.time()-60)).fetchone()[0]
+        if not authenticated:
             if failures >= 10:
                 raise Rejected("AUTH_RATE_LIMIT")
-        value = request.headers.get("authorization", "")
-        if not hmac.compare_digest(value, "Bearer " + keys[role]):
-            with engine.db() as db:
-                engine.audit(db, "AUTH", "AUTHENTICATION_FAILED")
             raise Rejected("AUTHENTICATION_FAILED")
+        request.state.actor = 'operator:' + principal['subject'] if principal else 'machine:' + machine
+        if principal is not None and permission not in principal["permissions"]:
+            raise Rejected("OPERATOR_PERMISSION_REQUIRED")
+        return principal
 
     async def body(request):
         raw = bytearray()
@@ -89,6 +139,8 @@ def create_app(engine, keys, *, max_body_bytes=131072):
                 return JSONResponse({"code": "ADAPTER_UNAVAILABLE"}, status_code=503)
         call = getattr(_req.state, "bound_call", "")
         with engine.db() as db:
+            security_audit.record(engine, db, 'AUTH_FAILURE' if exc.code in {'AUTHENTICATION_FAILED','AUTH_RATE_LIMIT'} else 'ACCESS_DENIED',
+                                  getattr(_req.state, 'actor', 'unauthenticated'), getattr(_req.state, 'bound_call', ''), exc.code)
             engine.audit(db, "REJECT", exc.code, call)
             binding = getattr(_req.state, "rejection_binding", None)
             if binding and exc.code in REJECTION_CODES:
@@ -96,14 +148,19 @@ def create_app(engine, keys, *, max_body_bytes=131072):
                 db.execute("INSERT OR IGNORE INTO gateway_rejections VALUES(?,?,?,?)",
                            (binding, time.time(), exc.code, digest(call) if call else None))
                 db.execute("DELETE FROM gateway_rejections WHERE request NOT IN (SELECT request FROM gateway_rejections ORDER BY at DESC LIMIT 128)")
-        return JSONResponse({"code": exc.code}, status_code=403)
+        return JSONResponse({"code": exc.code}, status_code=429 if exc.code == "AUTH_RATE_LIMIT" else 403)
 
     @app.exception_handler(Exception)
     async def unavailable(_req, _exc):
-        return JSONResponse({"code": "ADAPTER_UNAVAILABLE"}, status_code=503)
+        response = JSONResponse({"code": "ADAPTER_UNAVAILABLE"}, status_code=503)
+        apply_security_headers(response.headers, https=_req.url.scheme == "https")
+        return response
 
     @app.get("/health")
-    async def health():
+    async def health(request: Request):
+        if not request.headers.getlist("authorization"):
+            return {"status": "ok"}
+        auth(request, "machine")
         if engine.policy_router:
             return {"spec": "MVP-SPEC-5", "judge_mode": "JEV_OFFLINE_FIXTURE" if getattr(engine.policy_router.client, "is_fixture", False) else "JEV_USER_LIVE" if engine.policy_router.client.settings.authorized() else "JEV_RULES_ONLY", "decision_policy": engine.policy,
                     "jev_live": "NOT_AUTHORIZED" if not engine.policy_router.client.settings.authorized() else "USER_CONFIGURED_NOT_EVALUATED",
@@ -125,6 +182,14 @@ def create_app(engine, keys, *, max_body_bytes=131072):
         if not isinstance(value, dict) or set(value) != {"connection"} or not isinstance(value["connection"], str):
             raise Rejected("INVALID_EVENT")
         return engine.disconnect_metadata(machine, value["connection"])
+
+    @app.post("/connections/close")
+    async def close_connection(request: Request):
+        auth(request, "machine")
+        _, value = await body(request)
+        if not isinstance(value, dict) or set(value) != {"connection"} or not isinstance(value["connection"], str) or not 1 <= len(value["connection"]) <= 512:
+            raise Rejected("INVALID_EVENT")
+        return engine.close_session_connection(machine, value["connection"])
 
     @app.post("/event")
     async def event(request: Request):
@@ -207,9 +272,9 @@ def create_app(engine, keys, *, max_body_bytes=131072):
     async def demo_pending(request: Request):
         if os.environ.get("HOOKGW_DEMO_DISPATCH") != "1":
             return JSONResponse({"code": "DEMO_NOT_ENABLED"}, status_code=404)
-        auth(request, "human")
+        principal = auth(request, "human", "history:read")
         from app.transparent.demo_approval import pending
-        return pending(engine, machine)
+        return pending(engine, principal["machine"])
 
     @app.post("/transport-observed")
     async def transport(request: Request):
@@ -241,8 +306,11 @@ def create_app(engine, keys, *, max_body_bytes=131072):
     @app.post("/authz")
     async def authz(request: Request):
         # This endpoint is only mounted on the private mTLS listener in deployment.
+        request.state.auth_surface = "AGENT"
+        token = bearer_token(request)
+        if not token:
+            raise Rejected("AUTHENTICATION_FAILED")
         raw, value = await body(request)
-        token = request.headers.get("authorization", "").removeprefix("Bearer ")
         if isinstance(value, dict) and value.get("method") == "tools/call" and isinstance(value.get("params"), dict):
             params = value["params"]
             request.state.rejection_binding = rejection_binding(token, request.headers.get("x-with-human-request"), params.get("name"), params.get("arguments"))
@@ -282,34 +350,70 @@ def create_app(engine, keys, *, max_body_bytes=131072):
 
     @app.get("/history")
     async def history(request: Request):
-        auth(request, "human")
-        return {"calls": engine.history()}
+        principal = auth(request, "human", "history:read")
+        return {"calls": engine.history(machine=principal["machine"])}
+
+    @app.get("/history/summary")
+    async def history_summary(request: Request):
+        principal = auth(request, "human", "history:read")
+        calls = []
+        def label(value, limit=40):
+            return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9._:-]{1," + str(limit) + "}", value) else None
+        for row in engine.history(machine=principal["machine"]):
+            context = json.loads(row["reason"]) if row.get("reason") else {}
+            reasons = [code for code in context.get("reasons", []) if isinstance(code, str) and re.fullmatch(r"[A-Z0-9_]{1,80}", code)]
+            calls.append({"id": label(row["id"], 128) or digest(row["id"]),
+                          "decision": label(row["decision"]), "state": label(row["state"]),
+                          "policy": label(context.get("policy"), 80),
+                          "routing": label((context.get("policy_trace") or {}).get("routing")),
+                          "reasons": reasons[:8], "reasons_truncated": len(reasons) > 8})
+        return {"scope": "LATEST_100_CALLS", "counts": {decision: sum(row["decision"] == decision for row in calls)
+                for decision in {row["decision"] for row in calls}}, "calls": calls}
 
     @app.get("/demo/history")
     async def demo_history(request: Request):
         if os.environ.get("HOOKGW_DEMO_VIEWER") != "1":
             return JSONResponse({"code": "DEMO_NOT_ENABLED"}, status_code=404)
-        auth(request, "human")
+        principal = auth(request, "human", "history:read")
         from app.transparent.demo_report import project
-        return project(engine)
+        return project(engine, machine=principal["machine"])
 
     @app.post("/approval")
     async def approval(request: Request):
-        auth(request, "human")
+        principal = auth(request, "human", "approval:write")
         _, value = await body(request)
         if (not isinstance(value, dict) or set(value) not in ({"call", "approve"}, {"call", "approve", "approval_binding"})
                 or type(value["approve"]) is not bool or not isinstance(value["call"], str)):
             raise Rejected("INVALID_EVENT")
-        return engine.approval(machine, value["call"], value["approve"], value.get("approval_binding"))
+        return engine.approval(principal["machine"], value["call"], value["approve"], value.get("approval_binding"), actor=request.state.actor)
 
     @app.post("/sessions/forget")
     async def forget(request: Request):
-        auth(request, "human")
+        principal = auth(request, "human", "session:purge")
         _, value = await body(request)
-        if set(value) != {"session"}:
+        if not isinstance(value, dict) or set(value) != {"session"} or not isinstance(value["session"], str) or not 1 <= len(value["session"]) <= 512:
             raise Rejected("INVALID_EVENT")
-        engine.purge(value["session"])
+        engine.purge(value["session"], machine=principal["machine"], actor=request.state.actor)
         return {"state": "FORGOTTEN_LOGICALLY"}
+
+    @app.get('/security')
+    async def security_history(request: Request):
+        auth(request, 'human', 'security:read')
+        with engine.db() as db:
+            return security_audit.read(engine, db)
+
+    @app.post('/security/alerts/ack')
+    async def acknowledge_alert(request: Request):
+        auth(request, 'human', 'security:ack')
+        _, value = await body(request)
+        if not isinstance(value, dict) or set(value) != {'id'} or type(value['id']) is not int or value['id'] < 1:
+            raise Rejected('INVALID_EVENT')
+        with engine.db() as db:
+            if not db.execute('SELECT 1 FROM security_alerts WHERE id=?', (value['id'],)).fetchone():
+                raise Rejected('INVALID_EVENT')
+            security_audit.record(engine, db, 'ALERT_ACK', request.state.actor, str(value['id']), 'ACKNOWLEDGED')
+            db.execute('UPDATE security_alerts SET acknowledged=1 WHERE id=?', (value['id'],))
+        return {'state':'ACKNOWLEDGED'}
 
     return app
 
@@ -319,45 +423,97 @@ def public_app(app):
 
     @public.middleware("http")
     async def boundary(request, call_next):
+        if not local_request_ok(request):
+            # Let the mounted Control boundary record and reject this request.
+            return await call_next(request)
         if request.url.path == "/authz":
             try:
                 app.state.auth_audit.record("SERVICE", 403)
             except Exception:
-                return JSONResponse({"code": "ADAPTER_UNAVAILABLE"}, status_code=503)
-            return JSONResponse({"code": "PRIVATE_ENDPOINT"}, status_code=403)
+                response = JSONResponse({"code": "ADAPTER_UNAVAILABLE"}, status_code=503)
+            else:
+                response = JSONResponse({"code": "PRIVATE_ENDPOINT"}, status_code=403)
+            apply_security_headers(response.headers, https=request.url.scheme == "https")
+            return response
         return await call_next(request)
 
     public.mount("/", app)
     return public
 
 
+def serve_app(app, runtime=RUNTIME):
+    with lease(app.state.engine.path):
+        _serve_app(app, runtime)
+
+
+def _serve_app(app, runtime=RUNTIME):
+    """The same public/private TLS boundary is used by deployment and local tests."""
+    public = public_app(app)
+    async def serve():
+        async def maintenance():
+            while True:
+                await asyncio.sleep(10)
+                with app.state.engine.db() as db:
+                    app.state.engine.cleanup(db)
+        host = '0.0.0.0' if os.environ.get('WITH_HUMAN_CONTAINER_BOUNDARY') == 'loopback-published' else '127.0.0.1'
+        options = dict(host=host, ssl_certfile=str(runtime / "control.pem"), ssl_keyfile=str(runtime / "control.key"),
+                       access_log=False, proxy_headers=False, log_level="critical")
+        servers = asyncio.gather(uvicorn.Server(uvicorn.Config(public, port=8030, **options)).serve(),
+                                 uvicorn.Server(uvicorn.Config(app, port=8050, ssl_ca_certs=str(runtime / "ca.pem"), ssl_cert_reqs=ssl.CERT_REQUIRED, **options)).serve())
+        worker = asyncio.create_task(maintenance())
+        try:
+            done, _ = await asyncio.wait((servers, worker), return_when=asyncio.FIRST_COMPLETED)
+            for finished in done:
+                finished.result()
+        finally:
+            worker.cancel()
+            servers.cancel()
+            await asyncio.gather(worker, servers, return_exceptions=True)
+    asyncio.run(serve())
+
+
 def main():
     grant = json.loads((RUNTIME / "grant.json").read_text(encoding="utf-8"))
     judge, router = None, None
-    mode = os.environ.get("HOOKGW_PDP", "GPT")
+    mode = os.environ.get("HOOKGW_PDP", "JEV")
     if mode == "JEV":
         from app.transparent.jev import JevClient
-        from app.transparent.jev_config import DEFAULT_PROFILE, load_settings, make_policy
-        settings = load_settings(Path(os.environ.get("JEV_POLICY_FILE", "/jev-config/policy.json")))
+        from app.transparent.jev_config import DEFAULT_PROFILE, load_runtime_settings, make_policy
+        settings = load_runtime_settings(Path(os.environ.get("JEV_POLICY_FILE", "/jev-config/policy.json")),
+                                         allow_offline=os.environ.get("HOOKGW_REQUIRE_JEV", "1") == "0")
         profile = os.environ.get("HOOKGW_JEV_PROFILE", DEFAULT_PROFILE)
-        router = make_policy(JevClient(settings), profile)
+        client = JevClient(settings)
+        if settings.authorized():
+            client.preflight()
+        router = make_policy(client, profile)
     elif mode != "GPT":
         raise RuntimeError("UNSUPPORTED_PDP_MODE")
     elif os.environ.get("HOOKGW_USER_LIVE") == "1":
         from app.transparent.judge import DevelopmentJudge
         judge = DevelopmentJudge(os.environ["JUDGE_BUDGET_DB_PATH"])
-    engine = Engine(os.getenv("HOOKGW_DB", "/data/control.sqlite3"), secret("storage.key").encode(), grant, judge, policy_router=router,
-                    preserve_history_on_policy_change=mode == "JEV")
-    keys = {"machine": secret("machine.token"), "human": secret("human.token"), "machine_id": secret("machine.id"), "ticket": ticket}
-    app = create_app(engine, keys)
-    # Reject authz on the public listener even with a valid connection bearer.
-    public = public_app(app)
-    async def serve():
-        options = dict(host="0.0.0.0", ssl_certfile=str(RUNTIME / "control.pem"), ssl_keyfile=str(RUNTIME / "control.key"),
-                       access_log=False, proxy_headers=False, log_level="critical")
-        await asyncio.gather(uvicorn.Server(uvicorn.Config(public, port=8030, **options)).serve(),
-                             uvicorn.Server(uvicorn.Config(app, port=8050, ssl_ca_certs=str(RUNTIME / "ca.pem"), ssl_cert_reqs=ssl.CERT_REQUIRED, **options)).serve())
-    asyncio.run(serve())
+    path = Path(os.getenv('HOOKGW_DB','/data/control.sqlite3'))
+    with lease(path):
+        if (path.parent/'rotation.pending').exists():
+            raise RuntimeError('OFFLINE_ROTATION_RECOVERY_REQUIRED')
+        if (path.parent/'provider-reapproval.required').exists():
+            raise RuntimeError('RESTORED_PROVIDER_REAPPROVAL_REQUIRED')
+        authorization = path.parent/'provider.authorization'
+        if authorization.exists():
+            import hashlib
+            policy_file = Path(os.environ.get('JEV_POLICY_FILE','/jev-config/policy.json'))
+            if (authorization.is_symlink() or authorization.stat().st_size != 64
+                    or authorization.read_text() != hashlib.sha256(policy_file.read_bytes()).hexdigest()):
+                raise RuntimeError('RESTORED_PROVIDER_POLICY_BINDING')
+        engine = Engine(path, secret("storage.key").encode(), grant, judge, policy_router=router,
+                        preserve_history_on_policy_change=mode == "JEV")
+        keys = {"machine": secret("machine.token"), "human": secret("human.token"), "machine_id": secret("machine.id"), "ticket": ticket}
+        operator_file = RUNTIME / "operators.json"
+        if operator_file.exists():
+            if operator_file.is_symlink() or operator_file.stat().st_size > 16384:
+                raise RuntimeError("OPERATOR_POLICY_INVALID")
+            keys["operators"] = strict_json(operator_file.read_bytes())
+        app = create_app(engine, keys)
+        _serve_app(app)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 from app.common import canonical, digest, mask
 from app.pdp.diagnostics import AnalysisFailure, detail, failure_details
@@ -23,9 +23,12 @@ from app.pdp.semantic import (
     span_inputs,
     validated_spans,
 )
+from app.transparent import security_audit
+from app.transparent.retention import RetentionPolicy
 
 SPEC = "MVP-SPEC-5"
 POLICY = "hookgw-2026-10-16-v1"
+REASON_FORMAT = "sealed-decision-context-1"
 
 
 class Rejected(Exception):
@@ -47,6 +50,7 @@ class Engine:
     def __init__(self, path, key, grant, judge=None, policy_router=None, *, preserve_history_on_policy_change=False):
         self.path, self.box, self.grant, self.judge = str(path), Fernet(key), json.loads(canonical(grant)), judge
         self.policy_router = policy_router
+        self.retention = RetentionPolicy.from_env()
         self.policy = policy_router.policy if policy_router else POLICY
         self.grant_hash = digest(canonical({"grant": self.grant, "policy": self.policy} if policy_router else self.grant))
         Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -66,6 +70,9 @@ class Engine:
                 CREATE TABLE IF NOT EXISTS tombstones(id TEXT PRIMARY KEY, hash TEXT, state TEXT);
                 CREATE TABLE IF NOT EXISTS transport(call TEXT PRIMARY KEY, body BLOB);
                 CREATE TABLE IF NOT EXISTS configuration(id INTEGER PRIMARY KEY, hash TEXT);
+                CREATE TABLE IF NOT EXISTS closed_sessions(id TEXT PRIMARY KEY);
+                CREATE TABLE IF NOT EXISTS retention_deadlines(session TEXT PRIMARY KEY,created REAL,deadline REAL);
+                CREATE TABLE IF NOT EXISTS deletion_evidence(id INTEGER PRIMARY KEY,at REAL,session_hash TEXT,counts TEXT);
                 CREATE TABLE IF NOT EXISTS analysis_stops(session_hash TEXT,turn_hash TEXT,details TEXT,
                    PRIMARY KEY(session_hash,turn_hash));
                 CREATE TABLE IF NOT EXISTS gateway_rejections(request TEXT PRIMARY KEY,at REAL,code TEXT,call_hash TEXT);
@@ -75,12 +82,29 @@ class Engine:
                 CREATE TABLE IF NOT EXISTS demo_confirmations(call TEXT PRIMARY KEY,binding TEXT,expires REAL,
                    approved_at REAL,resumed INTEGER DEFAULT 0,reason_hash TEXT);
             """)
+            security_audit.initialize(db)
             # Process restart cannot establish whether the host/upstream executed.
             db.execute("UPDATE calls SET state='UNKNOWN' WHERE state IN ('ANALYZING','EXECUTING')")
+            # Upgrade only the explicitly opened product database. Frozen evaluation
+            # bundles are never opened by the submission tooling. Keep the complete
+            # old context encrypted; previously issued approvals cannot survive its binding change.
+            for stored in db.execute("SELECT id,reason FROM calls WHERE reason IS NOT NULL").fetchall():
+                envelope = json.loads(stored["reason"])
+                if not isinstance(envelope, dict):
+                    raise Rejected("DECISION_CONTEXT_INVALID")
+                if envelope.get("format") == REASON_FORMAT:
+                    self.read_reason(stored["reason"])
+                    continue
+                if "format" in envelope:
+                    raise Rejected("DECISION_CONTEXT_INVALID")
+                db.execute("UPDATE calls SET reason=?,state=CASE WHEN state IN ('PENDING','READY','CONFIRM','APPROVED') THEN 'STALE' ELSE state END WHERE id=?",
+                           (self.write_reason(envelope), stored["id"]))
+                db.execute("UPDATE approvals SET consumed=1 WHERE call=?", (stored["id"],))
+                db.execute("UPDATE demo_confirmations SET resumed=1 WHERE call=?", (stored["id"],))
             # Additive migration also protects the original failed user turn.
-            # Old call rows/reasons stay byte-for-byte unchanged. No budget writes.
+            # Already sealed contexts stay unchanged by this bookkeeping. No budget writes.
             for failed in db.execute("SELECT id,session,turn,reason FROM calls WHERE state='DENIED' AND reason IS NOT NULL").fetchall():
-                context = json.loads(failed["reason"])
+                context = self.read_reason(failed["reason"])
                 if "ANALYSIS_UNAVAILABLE" in context.get("reasons", []):
                     diagnostics = context.get("diagnostic") or []
                     if isinstance(diagnostics, dict):
@@ -91,7 +115,7 @@ class Engine:
             old = db.execute("SELECT hash FROM configuration WHERE id=1").fetchone()
             if old is None or old[0] != self.grant_hash:
                 if not preserve_history_on_policy_change:
-                    db.execute("UPDATE calls SET state='DENIED',decision='DENY',reason=? WHERE state IN ('PENDING','READY','CONFIRM','APPROVED')", (canonical({"reasons": ["POLICY_CHANGED"]}),))
+                    db.execute("UPDATE calls SET state='DENIED',decision='DENY',reason=? WHERE state IN ('PENDING','READY','CONFIRM','APPROVED')", (self.write_reason({"reasons": ["POLICY_CHANGED"]}),))
                     db.execute("UPDATE approvals SET consumed=1")
                 db.execute("INSERT OR REPLACE INTO configuration VALUES(1,?)", (self.grant_hash,))
             self.cleanup(db)
@@ -115,11 +139,32 @@ class Engine:
     def open(self, value):
         return json.loads(self.box.decrypt(value))
 
+    def write_reason(self, context):
+        """Encrypt the entire context, including slots, quotes and diagnostics."""
+        return canonical({"format": REASON_FORMAT, "body": self.seal(context).decode("ascii")})
+
+    def read_reason(self, value):
+        try:
+            envelope = json.loads(value)
+            if (not isinstance(envelope, dict) or set(envelope) != {"format", "body"}
+                    or envelope["format"] != REASON_FORMAT or not isinstance(envelope["body"], str)):
+                raise ValueError()
+            context = self.open(envelope["body"].encode("ascii"))
+            if not isinstance(context, dict):
+                raise ValueError()
+            return context
+        except (ValueError, TypeError, KeyError, UnicodeError, InvalidToken):
+            raise Rejected("DECISION_CONTEXT_INVALID") from None
+
     def audit(self, db, kind, code, call=""):
         db.execute("INSERT INTO audit(at,kind,code,call) VALUES(?,?,?,?)", (time.time(), kind, code, call))
         db.execute("DELETE FROM audit WHERE id NOT IN (SELECT id FROM audit ORDER BY id DESC LIMIT 4096)")
 
     def forget(self, db, session):
+        counts = {table: db.execute("SELECT count(*) FROM " + table + " WHERE session=?", (session,)).fetchone()[0]
+                  for table in ("calls", "sources", "turns")}
+        existed = db.execute("SELECT 1 FROM sessions WHERE id=?", (session,)).fetchone()
+        db.execute("DELETE FROM closed_sessions WHERE id=?", (session,))
         db.execute("INSERT OR IGNORE INTO tombstones SELECT id,hash,state FROM calls WHERE session=? AND state='UNKNOWN'", (session,))
         db.execute("DELETE FROM audit WHERE call IN (SELECT id FROM calls WHERE session=?)", (session,))
         db.execute("DELETE FROM approvals WHERE call IN (SELECT id FROM calls WHERE session=?)", (session,))
@@ -133,20 +178,38 @@ class Engine:
         db.execute("DELETE FROM sessions WHERE id=?", (session,))
         db.execute("DELETE FROM connections WHERE session=?", (session,))
         db.execute("DELETE FROM expiry WHERE kind='session' AND id=?", (session,))
+        db.execute("DELETE FROM retention_deadlines WHERE session=?", (session,))
+        if existed:
+            security_audit.record(self, db, 'RETENTION_DELETE', 'local-maintenance', session, 'CONTEXT_REMOVED')
+            db.execute("INSERT INTO deletion_evidence(at,session_hash,counts) VALUES(?,?,?)",
+                       (time.time(), digest(session), canonical(counts)))
+            db.execute("DELETE FROM deletion_evidence WHERE id NOT IN (SELECT id FROM deletion_evidence ORDER BY id DESC LIMIT 4096)")
 
     def cleanup(self, db):
-        # Seven-day ciphertext retention; logical secure-delete, not SSD/backup erasure proof.
-        expired = db.execute("SELECT id FROM expiry WHERE kind='session' AND deadline<?", (time.time() - 6 * 86400,)).fetchall()
+        # Old sessions used a fixed 24h lease. Do not use migration time as creation time.
+        db.execute("INSERT OR IGNORE INTO retention_deadlines SELECT id,deadline-86400,deadline-86400+? FROM expiry WHERE kind='session'", (self.retention.history_seconds,))
+        expired = db.execute("SELECT session FROM retention_deadlines WHERE min(deadline,created+?)<?",
+                             (self.retention.history_seconds, time.time())).fetchall()
         for row in expired:
             self.forget(db, row[0])
         db.execute("DELETE FROM connections WHERE hash IN (SELECT id FROM expiry WHERE kind='connection' AND deadline<?)", (time.time(),))
         db.execute("DELETE FROM expiry WHERE kind='connection' AND deadline<?", (time.time(),))
+        db.execute("DELETE FROM deletion_evidence WHERE at<?", (time.time() - self.retention.evidence_seconds,))
+        security_audit.sweep(db)
 
-    def purge(self, session):
+    def purge(self, session, *, machine=None, actor=None):
         with self.db() as db:
+            if machine is not None:
+                self.require_owner(db, session, machine)
             if db.execute("SELECT 1 FROM calls WHERE session=? AND state IN ('ANALYZING','READY','EXECUTING','UNKNOWN')", (session,)).fetchone():
                 raise Rejected("UNRESOLVED_EXECUTION")
+            security_audit.record(self, db, 'SESSION_PURGE', actor or machine or 'local-maintenance', session, 'REQUESTED')
             self.forget(db, session)
+
+    def require_owner(self, db, session, machine):
+        row = db.execute("SELECT machine FROM sessions WHERE id=?", (session,)).fetchone()
+        if not row or row[0] != machine:
+            raise Rejected("SESSION_OR_TURN_MISMATCH")
 
     def expires(self, db, kind, key):
         row = db.execute("SELECT deadline FROM expiry WHERE kind=? AND id=?", (kind, key)).fetchone()
@@ -159,10 +222,12 @@ class Engine:
             if db.execute("SELECT count(*) FROM connections").fetchone()[0] >= 128:
                 raise Rejected("CONNECTION_LIMIT")
             db.execute("INSERT INTO connections VALUES(?,?,NULL)", (digest(token), machine))
-            db.execute("INSERT INTO expiry VALUES('connection',?,?)", (digest(token), time.time() + 86400))
+            db.execute("INSERT INTO expiry VALUES('connection',?,?)", (digest(token), time.time() + self.retention.session_seconds))
 
     def connection(self, token, session=None):
         with self.db() as db:
+            if session and db.execute("SELECT 1 FROM closed_sessions WHERE id=?", (session,)).fetchone():
+                raise Rejected("CONNECTION_OR_SESSION_EXPIRED")
             self.expires(db, "connection", digest(token))
             row = db.execute("SELECT * FROM connections WHERE hash=?", (digest(token),)).fetchone()
             if not row or session and row["session"] not in (None, session):
@@ -201,6 +266,35 @@ class Engine:
                 db.execute("DELETE FROM expiry WHERE kind='connection' AND id=?", (connection_hash,))
         return {"state": "CLOSED"}
 
+    def close_session_connection(self, machine, token):
+        """Close the bound CLI session, retain history and uncertain effects."""
+        connection_hash = digest(token)
+        with self.db() as db:
+            row = db.execute("SELECT * FROM connections WHERE hash=?", (connection_hash,)).fetchone()
+            if not row:
+                return {"state": "CLOSED"}
+            if row["machine"] != machine:
+                raise Rejected("CONNECTION_BINDING")
+            session = row["session"]
+            if session is not None:
+                owner = db.execute("SELECT machine FROM sessions WHERE id=?", (session,)).fetchone()
+                if owner and owner[0] != machine:
+                    raise Rejected("CONNECTION_BINDING")
+                db.execute("UPDATE calls SET state='UNKNOWN' WHERE session=? AND state='EXECUTING'", (session,))
+                db.execute("UPDATE calls SET state='STALE' WHERE session=? AND state IN ('PENDING','ANALYZING','READY','CONFIRM','APPROVED')", (session,))
+                db.execute("UPDATE approvals SET consumed=1 WHERE call IN (SELECT id FROM calls WHERE session=?)", (session,))
+                db.execute("UPDATE demo_confirmations SET resumed=1 WHERE call IN (SELECT id FROM calls WHERE session=?)", (session,))
+                db.execute("DELETE FROM expiry WHERE kind='connection' AND id IN (SELECT hash FROM connections WHERE session=? AND machine=?)", (session, machine))
+                db.execute("DELETE FROM connections WHERE session=? AND machine=?", (session, machine))
+                if owner:
+                    db.execute("INSERT OR IGNORE INTO closed_sessions VALUES(?)", (session,))
+            db.execute("DELETE FROM connections WHERE hash=?", (connection_hash,))
+            db.execute("DELETE FROM expiry WHERE kind='connection' AND id=?", (connection_hash,))
+            self.audit(db, "CONNECTION", "CLI_SESSION_CLOSED")
+            from app.transparent.security_audit import record
+            record(self,db,'SESSION_CLOSE','machine:'+machine,session or connection_hash,'COMPLETED')
+        return {"state": "CLOSED"}
+
     def safe_input(self, text):
         return mask(text) == text
 
@@ -222,6 +316,8 @@ class Engine:
         with self.db() as db:
             self.cleanup(db)
             old = db.execute("SELECT * FROM sessions WHERE id=?", (session,)).fetchone()
+            if db.execute("SELECT 1 FROM closed_sessions WHERE id=?", (session,)).fetchone():
+                raise Rejected("CONNECTION_OR_SESSION_EXPIRED")
             if old:
                 self.expires(db, "session", session)
             elif db.execute("SELECT count(*) FROM sessions").fetchone()[0] >= 64:
@@ -237,12 +333,16 @@ class Engine:
             db.execute("INSERT OR REPLACE INTO sessions VALUES(?,?,?,?)",
                        (session, machine, turn, self.seal({"cwd": cwd})))
             if not old:
-                db.execute("INSERT INTO expiry VALUES('session',?,?)", (session, time.time() + 86400))
+                created = time.time()
+                db.execute("INSERT INTO expiry VALUES('session',?,?)", (session, created + self.retention.session_seconds))
+                db.execute("INSERT INTO retention_deadlines VALUES(?,?,?)", (session, created, created + self.retention.history_seconds))
             db.execute("UPDATE calls SET state='STALE' WHERE session=? AND state IN ('PENDING','CONFIRM','READY','APPROVED','ANALYZING')", (session,))
             self.audit(db, "TURN", "RECORDED")
         return {"turn": turn}
 
     def _current(self, db, machine, session, turn=None):
+        if db.execute("SELECT 1 FROM closed_sessions WHERE id=?", (session,)).fetchone():
+            raise Rejected("CONNECTION_OR_SESSION_EXPIRED")
         row = db.execute("SELECT * FROM sessions WHERE id=?", (session,)).fetchone()
         if not row or row["machine"] != machine or turn and row["turn"] != turn:
             raise Rejected("SESSION_OR_TURN_MISMATCH")
@@ -356,7 +456,7 @@ class Engine:
                 self.audit(db, "INTENT", "HOST_APPROVAL_PENDING_NOT_AUTHORIZED", call)
             except Rejected as exc:
                 db.execute("UPDATE calls SET state='DENIED',decision='DENY',reason=? WHERE id=?",
-                           (canonical({"reasons": [exc.code], "policy": self.policy, "intent_only": True}), call))
+                           (self.write_reason({"reasons": [exc.code], "policy": self.policy, "intent_only": True}), call))
                 self.audit(db, "INTENT", "REJECTED", call)
                 return {"call": call, "intent": "REJECTED", "code": exc.code}
         return {"call": call, "intent": "RECORDED_NOT_AUTHORIZED"}
@@ -407,7 +507,7 @@ class Engine:
         if db.execute("SELECT 1 FROM calls WHERE session=? AND id<>? AND state IN ('READY','EXECUTING','UNKNOWN','ANALYZING')", (row["session"], call)).fetchone():
             raise Rejected("PRIOR_RESULT_UNOBSERVED")
         current = [self.open(x[0]) for x in db.execute("SELECT body FROM sources WHERE session=? ORDER BY rowid", (row["session"],))]
-        context = json.loads(row["reason"])
+        context = self.read_reason(row["reason"])
         actual_grant = digest(canonical({"grant": self.grant, "policy": self.policy} if self.policy_router else self.grant))
         if context.get("grant_hash") != actual_grant or actual_grant != self.grant_hash or context.get("policy") != self.policy or context["source_hash"] != digest(canonical(current)):
             raise Rejected("FORWARD_SNAPSHOT_STALE")
@@ -420,7 +520,7 @@ class Engine:
                 raise Rejected("APPROVAL_SNAPSHOT_STALE")
         elif time.time() - context["analyzed_at"] > 30:
             self._revalidate_public_read(db, row, context, current)
-        if db.execute("UPDATE calls SET state='EXECUTING',reason=? WHERE id=? AND state='READY'", (canonical(context), call)).rowcount != 1:
+        if db.execute("UPDATE calls SET state='EXECUTING',reason=? WHERE id=? AND state='READY'", (self.write_reason(context), call)).rowcount != 1:
             raise Rejected("FORWARD_REPLAY")
         self.audit(db, "FORWARD", "RESERVED", call)
         return {"decision": "ALLOW", "state": "EXECUTING"}
@@ -489,7 +589,7 @@ class Engine:
                 diagnostic = [detail("TURN_ANALYSIS_STOPPED")]
                 reasons = ["TURN_ANALYSIS_STOPPED"]
                 db.execute("UPDATE calls SET state='DENIED',decision='DENY',reason=? WHERE id=?",
-                           (canonical({"reasons": reasons, "diagnostic": diagnostic, "analysis_stop": json.loads(stopped[0]), "spec": SPEC, "policy": self.policy}), call))
+                           (self.write_reason({"reasons": reasons, "diagnostic": diagnostic, "analysis_stop": json.loads(stopped[0]), "spec": SPEC, "policy": self.policy}), call))
                 self.audit(db, "DECISION", "TURN_ANALYSIS_STOPPED", call)
                 return {"call": call, "decision": "DENY", "state": "DENIED", "reasons": reasons, "diagnostic": diagnostic}
             candidate = self.open(row["body"])
@@ -565,7 +665,7 @@ class Engine:
                 decision, reasons = "DENY", ["PRIOR_RESULT_UNOBSERVED"]
             state = ("READY" if row["path"] == "mcp" else "EXECUTING") if decision == "ALLOW" else "CONFIRM" if decision == "CONFIRM" else "DENIED"
             changed = db.execute("UPDATE calls SET state=?,decision=?,reason=? WHERE id=? AND state='ANALYZING'",
-                       (state, decision, canonical({"reasons": reasons, "diagnostic": diagnostic, "view_checks": view_checks, "policy_trace": policy_trace, "snapshot_sha256": snapshot_hash, "evidence_contract": self.policy_router.contract if self.policy_router else SPAN_CONTRACT, "prompt_version": self.policy_router.prompt_version if self.policy_router else SPAN_PROMPT_VERSION, "source_hash": source_hash, "analyzed_at": time.time(), "grant_hash": self.grant_hash, "request_hash": digest(request), "action_hash": row["hash"], "forward_revalidation": "public-read-1", "spec": SPEC, "policy": self.policy}), call))
+                       (state, decision, self.write_reason({"reasons": reasons, "diagnostic": diagnostic, "view_checks": view_checks, "policy_trace": policy_trace, "snapshot_sha256": snapshot_hash, "evidence_contract": self.policy_router.contract if self.policy_router else SPAN_CONTRACT, "prompt_version": self.policy_router.prompt_version if self.policy_router else SPAN_PROMPT_VERSION, "source_hash": source_hash, "analyzed_at": time.time(), "grant_hash": self.grant_hash, "request_hash": digest(request), "action_hash": row["hash"], "forward_revalidation": "public-read-1", "spec": SPEC, "policy": self.policy}), call))
             if changed.rowcount != 1:
                 raise Rejected("RESERVATION_LOST")
             if demo_connection is not None and decision == "CONFIRM" and db.execute("SELECT 1 FROM demo_rpc_bindings WHERE call=?", (call,)).fetchone():
@@ -612,26 +712,30 @@ class Engine:
             diagnostic = failures
         return decision, reasons, diagnostic, view_checks
 
-    def approval(self, machine, call, approve, approval_binding=None):
+    def approval(self, machine, call, approve, approval_binding=None, *, actor=None):
         with self.db() as db:
             demo = db.execute("SELECT 1 FROM demo_confirmations WHERE call=?", (call,)).fetchone()
             if not demo and db.execute("SELECT 1 FROM demo_intents WHERE call=?", (call,)).fetchone():
                 raise Rejected("DEMO_APPROVAL_LEGACY_UNBOUND")
         if demo:
             from app.transparent.demo_approval import approve as demo_approve
-            return demo_approve(self, machine, call, approve, approval_binding)
+            with self.db() as db:
+                security_audit.record(self, db, 'APPROVAL', actor or machine, call, 'REQUESTED')
+            return demo_approve(self, machine, call, approve, approval_binding, actor=actor)
         with self.db() as db:
             row = db.execute("SELECT * FROM calls WHERE id=?", (call,)).fetchone()
             if not row or row["state"] != "CONFIRM":
                 raise Rejected("NOT_CONFIRM")
             self._current(db, machine, row["session"], row["turn"])
-            if json.loads(row["reason"]).get("policy") != self.policy:
+            if self.read_reason(row["reason"]).get("policy") != self.policy:
                 raise Rejected("APPROVAL_POLICY_CHANGED")
             if db.execute("SELECT 1 FROM calls WHERE session=? AND id<>? AND state IN ('READY','EXECUTING','UNKNOWN','ANALYZING')", (row["session"], call)).fetchone():
                 raise Rejected("PRIOR_RESULT_UNOBSERVED")
             if not approve:
+                security_audit.record(self, db, 'APPROVAL', actor or machine, call, 'REJECTED')
                 db.execute("UPDATE calls SET state='DENIED',decision='DENY' WHERE id=?", (call,))
                 return {"state": "DENIED"}
+            security_audit.record(self, db, 'APPROVAL', actor or machine, call, 'APPROVED')
             db.execute("INSERT INTO approvals(call,hash,turn,policy) VALUES(?,?,?,?)", (call, row["hash"], row["turn"], self.policy))
             db.execute("UPDATE calls SET state='APPROVED' WHERE id=?", (call,))
             return {"state": "APPROVED"}
@@ -651,14 +755,14 @@ class Engine:
             if not n:
                 raise Rejected("APPROVAL_BINDING_OR_REPLAY")
             state = "READY" if row["path"] == "mcp" else "EXECUTING"
-            context = json.loads(row["reason"])
+            context = self.read_reason(row["reason"])
             current = [self.open(x[0]) for x in db.execute("SELECT body FROM sources WHERE session=? ORDER BY rowid", (row["session"],))]
             if (context["source_hash"] != digest(canonical(current))
                     or time.time() - context["analyzed_at"] > 30
                     or context.get("policy") != self.policy
                     or context.get("grant_hash") != self.grant_hash):
                 raise Rejected("APPROVAL_SNAPSHOT_STALE")
-            db.execute("UPDATE calls SET state=?,reason=? WHERE id=?", (state, canonical(context), call))
+            db.execute("UPDATE calls SET state=?,reason=? WHERE id=?", (state, self.write_reason(context), call))
             return {"decision": "ALLOW", "state": state}
 
     def observe(self, machine, call, tool, args, output, failed=False):
@@ -718,12 +822,15 @@ class Engine:
             db.execute("INSERT INTO transport VALUES(?,?)", (rows[0][0], self.seal(result)))
             if typed_error:
                 row = db.execute("SELECT reason FROM calls WHERE id=?", (rows[0][0],)).fetchone()
-                reason = json.loads(row["reason"])
+                reason = self.read_reason(row["reason"])
                 reason["execution_error"] = {"version": "file-error-1", "code": "FILE_NOT_FOUND", "operation": "READ", "effect": "NO_WRITE"}
-                db.execute("UPDATE calls SET state='OBSERVED_ERROR',reason=? WHERE id=? AND state='EXECUTING'", (canonical(reason), rows[0][0]))
+                db.execute("UPDATE calls SET state='OBSERVED_ERROR',reason=? WHERE id=? AND state='EXECUTING'", (self.write_reason(reason), rows[0][0]))
                 self.audit(db, "TRANSPORT", "FILE_NOT_FOUND_OBSERVED", rows[0][0])
                 return {"state": "OBSERVED_ERROR"}
 
-    def history(self):
+    def history(self, *, machine=None):
         with self.db() as db:
-            return [{key: row[key] for key in ("id", "session", "turn", "path", "state", "decision", "reason", "created")} for row in db.execute("SELECT * FROM calls ORDER BY created DESC LIMIT 100")]
+            self.cleanup(db)
+            return [{**{key: row[key] for key in ("id", "session", "turn", "path", "state", "decision", "created")},
+                     "reason": canonical(self.read_reason(row["reason"])) if row["reason"] else None}
+                    for row in db.execute("SELECT c.* FROM calls c JOIN sessions s ON s.id=c.session WHERE (? IS NULL OR s.machine=?) ORDER BY c.created DESC LIMIT 100", (machine, machine))]

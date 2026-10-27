@@ -150,6 +150,9 @@ class JevPolicyV5(JevPolicy):
     def compose_decision(self, snapshot, parsed, checked, trace):
         return combine_behavior(checked["A"]["scope"], checked["B"]["behavior"])
 
+    def rule_only(self, snapshot, parsed):
+        return parsed["action"] in ("READ", "METADATA") or configuration_risk(parsed)
+
     async def evaluate(self, snapshot):
         try:
             parsed = self.parse_candidate(snapshot)
@@ -157,7 +160,7 @@ class JevPolicyV5(JevPolicy):
             decision, reasons, trace, checks = await super().evaluate(snapshot)
             trace.update(contract=self.contract, question_version=self.prompt_version)
             return decision, reasons, trace, checks
-        if parsed["action"] in ("READ", "METADATA") or configuration_risk(parsed):
+        if self.rule_only(snapshot, parsed):
             decision, reasons, trace, checks = await super().evaluate(snapshot)
             trace.update(contract=self.contract, question_version=self.prompt_version)
             return decision, reasons, trace, checks

@@ -142,8 +142,10 @@ def create_app(root, ledger, forward_key):
 
 
 if __name__ == "__main__":
+    from app.transparent.runtime_lock import lease
     runtime = Path(os.environ.get("HOOKGW_RUNTIME", "/runtime"))
-    app = create_app("/files", "/data/attempts.sqlite3", (runtime / "forward.key").read_text().strip())
-    uvicorn.run(app, host="0.0.0.0", port=8060, ssl_certfile=str(runtime / "upstream.pem"), ssl_keyfile=str(runtime / "upstream.key"),
-                ssl_ca_certs=str(runtime / "ca.pem"), ssl_cert_reqs=ssl.CERT_REQUIRED,
-                access_log=False, proxy_headers=False, log_level="critical")
+    with lease('/data/attempts.sqlite3'):
+        app = create_app("/files", "/data/attempts.sqlite3", (runtime / "forward.key").read_text().strip())
+        uvicorn.run(app, host="0.0.0.0", port=8060, ssl_certfile=str(runtime / "upstream.pem"), ssl_keyfile=str(runtime / "upstream.key"),
+                    ssl_ca_certs=str(runtime / "ca.pem"), ssl_cert_reqs=ssl.CERT_REQUIRED,
+                    access_log=False, proxy_headers=False, log_level="critical")

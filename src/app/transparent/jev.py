@@ -9,6 +9,7 @@ failed/cancelled requests retain both reservations. Actual usage is informationa
 import asyncio
 import math
 import re
+import secrets
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ import httpx
 
 from app.common import SafeError, canonical, mask, strict_json
 from app.pdp.diagnostics import AnalysisFailure, detail, failure_details
+from app.transparent.privacy import PrivacyError, TransmissionMasker, contains_pii
 
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-1.13.0"
@@ -79,12 +81,13 @@ class JevSettings:
     request_limit: int | None = None
     input_token_limit: int | None = None
     policy_id: str | None = None
+    data_policy: str = "masked_minimal_v1"
 
     def authorized(self):
         if not isinstance(self.key_path, (str, Path)) or not isinstance(self.budget_path, (str, Path)):
             return False
         return bool(
-            self.enabled is True and self.model == MODEL
+            self.enabled is True and self.model == MODEL and self.data_policy in ("nonpersonal_only", "masked_minimal_v1")
             and self.key_path is not None and Path(self.key_path).name == "jev.api-key"
             and self.budget_path is not None
             and Path(self.budget_path).name == "typesafe-budget.sqlite3"
@@ -115,14 +118,20 @@ def _numeric_issue(value, *, integer=False, maximum=1):
 
 
 def _sensitive_value(value):
+    if contains_pii(value):
+        return True
+    return credential_value(value)
+
+
+def credential_value(value):
     if isinstance(value, str):
         return mask(value) != value or bool(re.search(
             r'''(?i)(?:api[_-]?key|password|secret|token)["']?\s*[:=]\s*["']?[^\s,;]+''', value))
     if isinstance(value, dict):
-        return any(_sensitive_value(str(key) + "=" + canonical(item)) or _sensitive_value(item)
+        return any(credential_value(str(key) + "=" + canonical(item)) or credential_value(item)
                    for key, item in value.items())
     if isinstance(value, list):
-        return any(_sensitive_value(item) for item in value)
+        return any(credential_value(item) for item in value)
     return False
 
 
@@ -255,6 +264,25 @@ class JevClient:
         if transport is not None and not isinstance(transport, httpx.MockTransport):
             raise ValueError("Only an explicit offline MockTransport may be injected")
         self._transport = transport
+        self._masker = TransmissionMasker(secrets.token_bytes(32))
+
+    def _read_key(self, view):
+        try:
+            path = Path(self.settings.key_path)
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > 4096:
+                raise OSError()
+            key = path.read_text(encoding="ascii").strip()
+            if not 16 <= len(key) <= 2048 or any(c.isspace() for c in key):
+                raise OSError()
+            return key
+        except (OSError, TypeError, UnicodeError):
+            raise AnalysisFailure("MISSING_API_KEY", view) from None
+
+    def preflight(self):
+        """Validate local credentials without network or budget reservation."""
+        if not self.settings.authorized():
+            raise AnalysisFailure("JEV_NOT_AUTHORIZED")
+        self._read_key("SERVER")
 
     def _claim(self, analysis_id, view):
         settings = self.settings
@@ -309,19 +337,25 @@ class JevClient:
             raise AnalysisFailure("JEV_INPUT_INVALID", view) from None
         if len(body) > MAX_REQUEST_BYTES:
             raise AnalysisFailure("JEV_CONTEXT_LIMIT", view)
-        try:
-            path = Path(self.settings.key_path)
-            if path.is_symlink() or path.stat().st_size > 4096:
-                raise OSError()
-            key = path.read_text(encoding="ascii").strip()
-            if not 16 <= len(key) <= 2048 or any(c.isspace() for c in key):
-                raise OSError()
-        except (OSError, UnicodeError):
-            raise AnalysisFailure("MISSING_API_KEY", view) from None
+        if self.settings.data_policy == "nonpersonal_only" and contains_pii(frozen):
+            raise AnalysisFailure("JEV_PII_INPUT", view)
+        key = self._read_key(view)
         text = body.decode("utf-8")
-        # Never alter a source/ref snapshot silently; sensitive transmissions fail closed.
-        if key in text or _sensitive_value(frozen):
+        if key in text or credential_value(frozen):
             raise AnalysisFailure("JEV_SENSITIVE_INPUT", view)
+        if self.settings.data_policy == "masked_minimal_v1":
+            try:
+                if contains_pii(questions):
+                    raise PrivacyError("PERSONAL_QUESTION")
+                frozen["state"] = self._masker.transform(frozen["state"], analysis_id)
+                for question in questions.values():
+                    question["instructions"] += self._masker.NOTE
+                validate_questions(questions)
+                body = canonical(frozen).encode("utf-8")
+            except (PrivacyError, ValueError, TypeError, RecursionError):
+                raise AnalysisFailure("JEV_PRIVACY_TRANSFORM_FAILED", view) from None
+            if len(body) > MAX_REQUEST_BYTES:
+                raise AnalysisFailure("JEV_CONTEXT_LIMIT", view)
         try:
             if Path(self.settings.budget_path).is_symlink():
                 raise OSError()

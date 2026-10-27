@@ -6,11 +6,18 @@ import unicodedata
 
 from app.common import canonical, digest, mask
 from app.pdp.diagnostics import detail
+from app.transparent.gate_policy import POLICY as GATE_POLICY
+from app.transparent.gate_policy import RULE as GATE_RULE
 
 DEMO_SCOPE = "SYNTHETIC_REGISTERED_MCP"
 PATHS = {"docs/release.md", "docs/review.md", "reports/normal.md", "reports/review.md"}
 STATES = {"PENDING", "ANALYZING", "READY", "EXECUTING", "UNKNOWN", "DENIED", "CONFIRM", "APPROVED", "OBSERVED", "OBSERVED_ERROR", "STALE"}
 REASONS = {"PUBLIC_ENROLLED_READ", "USER_INTENT_SUPPORTED", "TASK_DATA_SUPPORTED", "EXTERNAL_INSTRUCTION_DEPENDENCY", "OUTSIDE_TASK_SCOPE", "SEMANTIC_UNCERTAIN", "ANALYSIS_UNAVAILABLE", "POLICY_CHANGED", "TOOL_ARGUMENTS_UNPARSED_OR_SCOPE", "SECURITY_CONFIGURATION_FORBIDDEN", "SECURITY_CONFIG_PATCH_UNRESOLVED", "SECURITY_CONFIG_UNPARSED", "PROTECTED_PATH", "SENSITIVE_INPUT"}
+REASONS |= {"JEV_REJECTED_HELD_CASE", "JEV_NOT_AFFIRMED_RISK_CASE", "CONSENT_CASE_A_AND_B_AFFIRMED",
+            "DEMO_AUTHORITY_OR_SEMANTICS_UNRESOLVED", "SENSITIVE_RESOURCE_REQUIRES_CONSENT",
+            "OUTSIDE_TASK_CAPABILITY_REQUIRES_CONSENT", "PRIVATE_MUTATION_REQUIRES_CONSENT",
+            "NONPUBLIC_READ_REQUIRES_CONSENT", "PROTECTED_USER_PATH_REQUIRES_CONSENT",
+            "SECURITY_CONFIGURATION_REQUIRES_CONSENT", "SIDE_EFFECT_OR_CONSENT_NOT_DELEGATED"}
 CHOICES = {"DIRECT", "DATA_DEPENDENT", "WITHIN_TASK", "USER", "GENERATED", "ADDED_INSTRUCTION", "OUTSIDE_TASK", "UNCERTAIN", "NONE", "TASK_DATA", "NEW_INSTRUCTION", "RECOMMENDATION", "DATA", "PROHIBITION_QUOTE", "UNRESOLVED", *(f"e{i}" for i in range(16))}
 CHOICES |= {"LEGITIMATE", "EXTERNAL_ADOPTION", "SUPPORTED", "UNRELATED"}
 OBSERVATION_KEYS = {"view", "question", "choice", "probabilities", "provider_confidence", "computed_confidence", "effective_confidence", "confidence", "selected_probability", "status", "threshold", "threshold_passed", "basis", "selected", "observation_status", "evidence", "source_role", "binding"}
@@ -63,15 +70,15 @@ def safe_observations(value, depth=0):
     return None
 
 
-def project(engine):
+def project(engine, *, machine=None):
     if engine.grant.get("demo_scope") != DEMO_SCOPE:
         return {"version": "mvp-demo-history-1", "scope": "UNAVAILABLE", "calls": [], "truncated": False}
     calls = []
     with engine.db() as db:
-        rows = db.execute("SELECT * FROM calls ORDER BY created DESC LIMIT 11").fetchall()
+        rows = db.execute("SELECT c.* FROM calls c JOIN sessions s ON s.id=c.session WHERE (? IS NULL OR s.machine=?) ORDER BY c.created DESC LIMIT 11", (machine, machine)).fetchall()
         for row in rows[:10]:
             candidate = engine.open(row["body"])
-            context = json.loads(row["reason"]) if row["reason"] else {}
+            context = engine.read_reason(row["reason"]) if row["reason"] else {}
             trace = context.get("policy_trace") or {}
             if not isinstance(trace,dict):
                 trace = {}
@@ -106,13 +113,13 @@ def project(engine):
                     "target":target if in_scope else "OUT_OF_DEMO_SCOPE", "request_excerpt":excerpt(engine.open(turn[0]).get("prompt","")) if turn else "",
                     "source_excerpts":safe_sources,"payload_excerpt":excerpt(args.get("content","")) if in_scope else "",
                     "source_snapshot_verified":snapshot_sources is not None,
-                    "policy":context.get("policy") if context.get("policy") in {"hookgw-2026-10-16-jev-v2", "hookgw-2026-10-17-jev-v3", "hookgw-2026-10-17-jev-v5","hookgw-2026-10-17-jev-v5p1"} else "UNKNOWN",
+                    "policy":context.get("policy") if context.get("policy") in {GATE_POLICY, "hookgw-2026-10-16-jev-v2", "hookgw-2026-10-17-jev-v3", "hookgw-2026-10-17-jev-v5","hookgw-2026-10-17-jev-v5p1"} else "UNKNOWN",
                     "causal_explanation":"NOT_ESTABLISHED",
                     "state":row["state"] if row["state"] in STATES else "UNKNOWN", "decision":row["decision"] if row["decision"] in {"ALLOW","DENY","CONFIRM"} else "UNKNOWN",
                     "reasons":[v if isinstance(v,str) and v in REASONS else "UNKNOWN_REASON" for v in context.get("reasons",[])[:8]],
                     "diagnostic":[detail(v.get("code"),v.get("view"),v) for v in diagnostics[:2] if isinstance(v,dict)],
                     "policy_trace":{"routing":trace.get("routing") if trace.get("routing") in {"RULE_ALLOW","RULE_DENY","SEMANTIC","ANALYSIS_FAILED"} else "UNKNOWN",
-                                    "decision_rule_version":trace.get("decision_rule_version") if trace.get("decision_rule_version") == "jev-b-owned-positive-1" else "NOT_APPLIED",
+                                    "decision_rule_version":trace.get("decision_rule_version") if trace.get("decision_rule_version") in {GATE_RULE, "jev-b-owned-positive-1"} else "NOT_APPLIED",
                                     "positive_authorization_basis":trace.get("positive_authorization_basis") if trace.get("positive_authorization_basis") == "B_LEGITIMATE_VALIDATED_RAW_A_WITHIN_TASK" else "NOT_APPLIED",
                                     "view_observations":safe_observations(trace.get("view_observations",{}))}}
             if row["decision"] == "CONFIRM":
