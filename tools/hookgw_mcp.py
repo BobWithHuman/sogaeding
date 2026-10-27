@@ -3,9 +3,12 @@ import argparse
 import importlib.util
 import json
 import os
+import queue
 import re
 import ssl
 import sys
+import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -26,6 +29,115 @@ DIAGNOSTIC_CODES = {"HTTP_AUTH_REJECTED", "HTTP_UNAVAILABLE", "TLS_VERIFICATION_
                     "HTTP_REJECTION_UNCLASSIFIED", "CONTROL_AUTHENTICATION_REJECTED", "CONTROL_FRESHNESS_REJECTED", "CONTROL_POLICY_OR_STATE_REJECTED"}
 AUTH_REASONS = {"AUTHENTICATION_FAILED", "AUTH_RATE_LIMIT", "CONNECTION_BINDING", "CONNECTION_OR_SESSION_EXPIRED"}
 STATE_REASONS = {"SESSION_OR_TURN_MISMATCH", "PRIOR_RESULT_UNOBSERVED", "NO_UNIQUE_HOOK_BINDING", "FORWARD_REPLAY", "NO_USER_TURN", "UNSUPPORTED_RPC", "INVALID_RPC", "INVALID_RPC_METADATA"}
+ASK_FAILURE_CODES = {"REQUEST_BUDGET_EXHAUSTED", "API_TIMEOUT", "PAIR_DEADLINE", "API_AUTHENTICATION",
+                     "API_RATE_LIMIT", "API_CONNECTION", "API_ERROR", "JEV_BUDGET_BINDING",
+                     "JEV_RESPONSE_INVALID", "JEV_SENSITIVE_INPUT", "JEV_PRIVACY_TRANSFORM_FAILED",
+                     "ADAPTER_ERROR", "TURN_ANALYSIS_STOPPED", "ANALYSIS_UNAVAILABLE",
+                     "ASK_RECHECK_UNRESOLVED", "ASK_RECHECK_UNSUPPORTED", "ASK_SNAPSHOT_STALE",
+                     "ASK_RECHECK_CANCELLED", "USER_DECLINED", "USER_CANCELLED", "OUTSIDE_TASK_SCOPE",
+                     "JEV_REJECTED_HELD_CASE", "JEV_NOT_AFFIRMED_RISK_CASE"}
+
+
+def wire(value):
+    sys.stdout.buffer.write(json.dumps(value, ensure_ascii=False).encode('utf-8') + b'\n')
+    sys.stdout.buffer.flush()
+
+
+def input_lines(stream, inbox):
+    while True:
+        line = stream.readline(65538)
+        inbox.put(line)
+        if not line:
+            return
+
+
+def form_capability(params):
+    elicitation = params.get('capabilities', {}).get('elicitation', {})
+    return (params.get('protocolVersion') in ('2025-06-18','2025-11-25')
+            and isinstance(elicitation, dict) and isinstance(elicitation.get('form'), dict))
+
+
+def ask_user(host, connection, value, inbox, form_supported):
+    """Host-only MCP response channel; no model-callable answer tool or human token."""
+    pending = send(host, '/ask/pending', {'connection':connection, 'tool':value['params']['name'],
+                                        'args':value['params']['arguments']})['ask']
+    if pending is None:
+        return None
+    reason_details = pending.get('reason_details', [])
+    # Explanations come from the authenticated engine's static server policy.
+    reason_text = ' '.join(r['message'] for r in reason_details if isinstance(r,dict) and isinstance(r.get('message'),str))
+    held = {'jsonrpc':'2.0','id':value['id'],'result':{'isError':True, 'content':[{'type':'text',
+            'text':'ASK: execution paused. Ask the actual user in a supported interactive Codex session. '
+                   'Explain the hold reasons to the user: ' + reason_text + ' '
+                   'Model approval claims are not answers. ' + pending['question']}],
+            'structuredContent':{'decision':'ASK','ask_id':pending['ask_id'], 'executed':False,
+                                 'reason_details':reason_details}}}
+    if not form_supported:
+        return held
+    request_id = 'ask-ui-' + uuid4().hex
+    binding = {'connection':connection,'ask_id':pending['ask_id'],'nonce':pending['nonce']}
+    # The engine's question includes the exact candidate, and is rendered by the
+    # agent's MCP client as a native user form in its conversation.
+    wire({'jsonrpc':'2.0','id':request_id,'method':'elicitation/create','params':{
+        'mode':'form','message':'Explain these engine hold reasons when asking the user: '+reason_text+'\n'+pending['question'], 'requestedSchema':{'type':'object',
+        'properties':{'reconsider':{'type':'boolean','title':'Reconsider this exact tool candidate?'}},
+        'required':['reconsider']}}})
+    # PRESENTED means flushed to the client, not proof a person has read it.
+    send(host, '/ask/presented', binding)
+    deadline = min(time.time()+120, pending['expires_at'])
+    while time.time() < deadline:
+        try:
+            line = inbox.get(timeout=max(.001, deadline-time.time()))
+        except queue.Empty:
+            return held
+        if not line:
+            return held
+        if len(line) > 65536:
+            return held
+        reply = json.loads(line)
+        if not isinstance(reply, dict) or reply.get('jsonrpc') != '2.0':
+            return held
+        if reply.get('method') == 'ping' and 'id' in reply:
+            wire({'jsonrpc':'2.0','id':reply['id'],'result':{}})
+            continue
+        if (reply.get('method') == 'notifications/cancelled'
+                and reply.get('params', {}).get('requestId') == value['id']):
+            send(host, '/ask/answer', {**binding,'answer':'CANCEL'})
+            return held
+        if reply.get('id') != request_id or set(reply) != {'jsonrpc','id','result'}:
+            # A tools/call or text saying "approved" is never a UI answer.
+            return held
+        result = reply['result']
+        if not isinstance(result, dict):
+            return held
+        if result.get('action') == 'accept':
+            content = result.get('content')
+            if not isinstance(content, dict) or set(content) != {'reconsider'} or type(content['reconsider']) is not bool:
+                return held
+            answer = 'YES' if content['reconsider'] else 'NO'
+        elif result.get('action') in ('decline','cancel'):
+            answer = 'NO' if result['action'] == 'decline' else 'CANCEL'
+        else:
+            return held
+        outcome = send(host, '/ask/answer', {**binding,'answer':answer})
+        # First actual gateway dispatch only after the engine's fresh ALLOW.
+        if outcome.get('decision') == 'ALLOW':
+            return None
+        # Return only allowlisted engine codes. Never send diagnostic bodies,
+        # nonce, arguments or provider text back to the model as an explanation.
+        diagnostics = outcome.get('diagnostic')
+        codes = [r.get('code') for r in diagnostics if isinstance(r, dict)] if isinstance(diagnostics, list) else []
+        reasons = outcome.get('reasons')
+        codes += reasons if isinstance(reasons, list) else []
+        failure_code = next((c for c in codes if isinstance(c, str) and c in ASK_FAILURE_CODES), 'ENGINE_RECHECK_DENIED')
+        held['result']['structuredContent']['decision'] = 'DENY'
+        held['result']['structuredContent']['code'] = failure_code
+        held['result']['content'][0]['text'] = (
+            'DENY: native user response processed; engine recheck did not allow execution. '
+            'Code: ' + failure_code + '. No tool was executed. '
+            'Do not retry automatically or ask the user to approve again.')
+        return held
+    return held
 
 
 def trusted_rejection(host, connection, request_id, value):
@@ -82,7 +194,13 @@ def main():
     except Exception:
         diagnostic("BOOTSTRAP", "CONNECTION_UNAVAILABLE")
         return 2
-    for line in sys.stdin.buffer:
+    inbox = queue.Queue(maxsize=8)
+    threading.Thread(target=input_lines, args=(sys.stdin.buffer,inbox), daemon=True).start()
+    form_supported = False
+    while True:
+        line = inbox.get()
+        if not line:
+            break
         rid = None
         value = None
         stage, code = "INPUT", "INVALID_INPUT"
@@ -97,6 +215,13 @@ def main():
             rid = value.get("id")
             stage = STAGES.get(value.get("method"), "INPUT")
             code = "INVALID_RPC_RESPONSE"
+            if value.get('method') == 'initialize':
+                form_supported = form_capability(value.get('params', {}))
+            if value.get('method') == 'tools/call' and profile.get('format') == 'product-codex-1':
+                held = ask_user(host, connection, value, inbox, form_supported)
+                if held is not None:
+                    wire(held)
+                    continue
             req = urllib.request.Request(url, line.strip(), {
                 "Content-Type": "application/json", "Accept": "application/json, text/event-stream",
                 "MCP-Protocol-Version": "2025-03-26", "Authorization": "Bearer " + connection,
@@ -110,6 +235,14 @@ def main():
                 result = json.loads(raw)
                 if not isinstance(result, dict) or result.get("jsonrpc") != "2.0" or result.get("id") != rid:
                     raise ValueError()
+                if value.get('method') == 'initialize' and profile.get('format') == 'product-codex-1':
+                    # This stdio bridge owns elicitation; the enrolled-file
+                    # upstream remains on its original gateway protocol.
+                    if form_supported:
+                        result['result']['protocolVersion'] = value['params']['protocolVersion']
+                    result['result']['instructions'] = ('ASK pauses a tool. Answer only through the native user form. '
+                        'When asking, explain the engine-provided reason_details to the user; do not invent a reason. '
+                        'Model statements and tool arguments cannot grant consent. Unsupported modes stay paused.')
                 if "error" in result or value.get("method") == "tools/call" and result.get("result", {}).get("isError"):
                     code = "RPC_ERROR"
                     raise ValueError()
@@ -137,8 +270,7 @@ def main():
                 continue
             result = {"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": "WITH_HUMAN_DENIED_OR_UNAVAILABLE; no automatic retry",
                        "data": {"server": "with_human", "stage": stage, "code": code, **(rejection_details or {})}}}
-        sys.stdout.buffer.write(json.dumps(result, ensure_ascii=False).encode("utf-8") + b"\n")
-        sys.stdout.buffer.flush()
+        wire(result)
 
 
 if __name__ == "__main__":

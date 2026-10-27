@@ -1,103 +1,135 @@
-name: with-human
+name: sogaeding-team
 
-x-development: &development
-  image: with-human-dev:local
-  build:
-    context: .
-    dockerfile: Dockerfile.dev
-    target: dev
+x-app: &app
+  image: ${SOGAEDING_TEAM_IMAGE:-with-human-engine:local}
   user: "10001:10001"
-  init: true
-  working_dir: /workspace
+  working_dir: /product
   read_only: true
+  init: true
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
-  tmpfs:
-    - /tmp:size=128m,mode=1777
+  tmpfs: ["/tmp:size=128m,mode=1777"]
   pids_limit: 128
-  mem_limit: 1g
-  cpus: 2
-  environment: &base-environment
+  mem_limit: 512m
+  environment: &environment
     PYTHONDONTWRITEBYTECODE: "1"
-    PYTHONUNBUFFERED: "1"
-    PYTHONPATH: /workspace/src
-    XDG_CACHE_HOME: /tmp/cache
-    RUFF_CACHE_DIR: /tmp/ruff-cache
-  networks: [development]
+    PYTHONPATH: /product/src
+    CONTRACT_DIR: /product/contracts
+    HOOKGW_RUNTIME: /runtime
+    RUNTIME_DIR: /runtime
+    WITH_HUMAN_CONTAINER_BOUNDARY: loopback-published
+  networks: [protected]
 
 services:
-  # Running this service prepares tools only; it does not expose an app endpoint.
-  dev:
-    <<: *development
-    command: [python, -c, "import time; time.sleep(86400)"]
-    volumes:
-      - ./docs:/workspace/docs:ro
-      - ./tools:/workspace/tools:ro
-      - ./tests:/workspace/tests:ro
-      - ./fixtures:/workspace/fixtures:ro
-      - ./pyproject.toml:/workspace/pyproject.toml:ro
-      - ./harness:/workspace/harness:ro
-      - type: bind
-        source: ./src
-        target: /workspace/src
-        read_only: true
-        bind: {create_host_path: false}
-
-  # Reserved commands are activated only after real app modules have been built.
   control:
-    <<: *development
-    profiles: [app]
-    networks: [development, local-ingress]
-    command: [python, -m, app.control.serve]
+    <<: *app
+    command: [python, -m, app.transparent.server]
+    ports: ["127.0.0.1:${SOGAEDING_CONTROL_PORT:-8130}:8030"]
+    networks: [protected, ingress]
     environment:
-      <<: *base-environment
-      CONTROL_DB_PATH: /data/control.sqlite3
-      RUNTIME_DIR: /runtime
-      CONTRACT_DIR: /workspace/docs/mvp/contracts
-    ports: ["127.0.0.1:8000:8000"]
+      <<: *environment
+      HOOKGW_PDP: JEV
+      HOOKGW_JEV_PROFILE: gate-6
+      HOOKGW_REQUIRE_JEV: "1"
+      JEV_POLICY_FILE: /jev-config/policy.json
+      WITH_HUMAN_SESSION_TTL_SECONDS: "${WITH_HUMAN_SESSION_TTL_SECONDS:-86400}"
+      WITH_HUMAN_HISTORY_TTL_SECONDS: "${WITH_HUMAN_HISTORY_TTL_SECONDS:-604800}"
+      WITH_HUMAN_DELETION_EVIDENCE_TTL_SECONDS: "${WITH_HUMAN_DELETION_EVIDENCE_TTL_SECONDS:-2592000}"
     volumes:
+      - ./src:/product/src:ro
+      - ./docs/mvp/contracts:/product/contracts:ro
       - type: bind
-        source: ./src
-        target: /workspace/src
+        source: ${SOGAEDING_JEV_KEY_FILE:-./runtime/jev/jev.api-key}
+        target: /jev-key/jev.api-key
         read_only: true
         bind: {create_host_path: false}
-      - ./docs/mvp/contracts:/workspace/docs/mvp/contracts:ro
-      - ./artifacts/runtime-wp01/control:/runtime:ro
-      - control-data:/data
-
+      - type: bind
+        source: ${SOGAEDING_JEV_POLICY_FILE:-./runtime/jev/policy.json}
+        target: /jev-config/policy.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: volume
+        source: team-runtime
+        target: /jev-budget
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/jev-budget"}
+      - type: volume
+        source: team-runtime
+        target: /runtime
+        read_only: true
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/control"}
+      - type: volume
+        source: team-runtime
+        target: /data
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/control-data"}
+  upstream:
+    <<: *app
+    command: [python, -m, app.transparent.upstream]
+    volumes:
+      - ./src:/product/src:ro
+      - ./docs/mvp/contracts:/product/contracts:ro
+      - type: volume
+        source: team-runtime
+        target: /runtime
+        read_only: true
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/upstream"}
+      - type: volume
+        source: team-runtime
+        target: /data
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/upstream-data"}
+      - type: volume
+        source: team-runtime
+        target: /files
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/workspace"}
   gateway:
-    <<: *development
-    profiles: [app]
-    networks: [development, local-ingress]
-    command: [python, -m, app.gateway.main]
-    environment:
-      <<: *base-environment
-      CONTROL_BASE_URL: https://control:8443
-      EFFECTS_DB_PATH: /data/effects.sqlite3
-      GATEWAY_HOST: 0.0.0.0
-      GATEWAY_PORT: "8001"
-      MCP_RESOURCE_URL: https://127.0.0.1:8001/mcp
-      CONTRACT_DIR: /workspace/docs/mvp/contracts
-    ports: ["127.0.0.1:8001:8001"]
-    depends_on: [control]
+    image: cr.agentgateway.dev/agentgateway@sha256:89b5d4c66dc59049d70011910ea428afafb40a238779c2fc9f42a66cecee19da
+    command: [-f, /config/config.yaml]
+    user: "10001:10001"
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    pids_limit: 128
+    mem_limit: 512m
+    ports: ["127.0.0.1:${SOGAEDING_GATEWAY_PORT:-8140}:8040"]
+    networks: [protected, ingress]
     volumes:
-      - type: bind
-        source: ./src
-        target: /workspace/src
+      - ./agentgateway:/config:ro
+      - type: volume
+        source: team-runtime
+        target: /runtime
         read_only: true
-        bind: {create_host_path: false}
-      - ./fixtures:/workspace/fixtures:ro
-      - ./docs/mvp/contracts:/workspace/docs/mvp/contracts:ro
-      - ./artifacts/runtime-wp01/gateway:/runtime:ro
-      - effects-data:/data
-
-networks:
-  development:
-    internal: true
-  # Docker Desktop does not publish ports from an internal-only network.
-  # No application accepts arbitrary outbound URLs; published ports stay loopback-only.
-  local-ingress:
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/gateway"}
+    depends_on: [control, upstream]
+  dashboard:
+    <<: *app
+    profiles: [dashboard]
+    networks: [protected, ingress]
+    command: [python, -m, app.dashboard_local, --credentials, /dashboard-credentials, --engine-url, 'https://control:8030', --port, '8150']
+    ports: ["127.0.0.1:${SOGAEDING_DASHBOARD_PORT:-8150}:8150"]
+    volumes:
+      - ./src:/product/src:ro
+      - type: volume
+        source: team-runtime
+        target: /dashboard-credentials
+        read_only: true
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/host"}
+  check:
+    <<: *app
+    profiles: [verification]
+    command: [python, /tools/team_runtime.py, check, "/team/artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}"]
+    volumes:
+      - ./tools:/tools:ro
+      - team-runtime:/team:ro
 
 volumes:
-  control-data:
-  effects-data:
+  team-runtime:
+    external: true
+    name: "${SOGAEDING_TEAM_VOLUME:?Run scripts/team_dev.ps1 prepare first}"
+
+networks:
+  protected:
+    internal: true
+    ipam: {config: [{subnet: "${SOGAEDING_PROTECTED_SUBNET:-10.253.240.0/24}"}]}
+  ingress:
+    ipam: {config: [{subnet: "${SOGAEDING_INGRESS_SUBNET:-10.253.241.0/24}"}]}

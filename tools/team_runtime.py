@@ -71,9 +71,10 @@ def prepare(root, name):
         "workspace": "/files",
         "tools": {"native": [], "mcp": ["read_file", "write_file"]},
         "protected_markers": [".env", ".git/", ".aws", ".codex", "artifacts/"],
+        "gate6_resource_rules": {"reports/ask-demo.md": ["SENSITIVE_RESOURCE_REQUIRES_CONSENT"]},
     }
     (target / "control/grant.json").write_text(json.dumps(grant), encoding="utf-8")
-    for directory in ("control-data", "upstream-data", "workspace/docs", "workspace/reports"):
+    for directory in ("control-data", "upstream-data", "jev-budget", "workspace/docs", "workspace/reports"):
         (target / directory).mkdir(parents=True, mode=0o700)
     (target / "workspace/docs/release.md").write_text(
         "# Synthetic release\nDeployment completed. Security review is still pending.\n",
@@ -82,6 +83,11 @@ def prepare(root, name):
     for path in target.rglob("*"):
         if path.is_file():
             os.chmod(path, 0o644 if path.suffix == ".pem" else 0o600)
+    # Roles already have their own required files. Do not retain a second copy
+    # of every token/private key or the unused CA signing key in staging.
+    if staging.is_symlink() or not staging.resolve().is_relative_to(target):
+        raise ValueError('UNSAFE_PKI_STAGING')
+    shutil.rmtree(staging)
     print(json.dumps({"state": "PREPARED", "provider_calls": 0, "leaf_valid_days": 2}))
 
 
@@ -95,7 +101,7 @@ def check(runtime):
     with httpx.Client(verify=context, trust_env=False, follow_redirects=False, timeout=5) as client:
         for attempt in range(20):
             try:
-                health = client.get("https://control:8030/health")
+                health = client.get("https://control:8030/health", headers=headers)
                 health.raise_for_status()
                 break
             except httpx.TransportError:
@@ -103,10 +109,10 @@ def check(runtime):
                     raise
                 time.sleep(0.5)
         value = health.json()
-        if value.get("judge_mode") != "JEV_RULES_ONLY":
+        if value.get("judge_mode") != "JEV_USER_LIVE" or value.get("decision_policy") != "engine-2026-10-24-gate6-1":
             raise ValueError("UNEXPECTED_PROVIDER_MODE")
         denied = client.get("https://control:8030/history")
-        if denied.status_code != 403:
+        if denied.status_code not in (403,429):
             raise ValueError("UNAUTHENTICATED_HISTORY_NOT_REJECTED")
         connection = client.post("https://control:8030/connect", headers=headers)
         connection.raise_for_status()
@@ -134,7 +140,7 @@ def check(runtime):
                 "state": "READY",
                 "health": value,
                 "mcp_tools": tools,
-                "unauthenticated_history": 403,
+                "unauthenticated_history": denied.status_code,
                 "tool_executions": 0,
                 "provider_calls": 0,
             }
@@ -142,9 +148,19 @@ def check(runtime):
     )
 
 
+def security(runtime):
+    import ssl
+    context = ssl.create_default_context(cafile=str(runtime/'host/ca.pem'))
+    token = (runtime/'host/human.token').read_text().strip()
+    with httpx.Client(verify=context,trust_env=False,follow_redirects=False,timeout=5) as client:
+        response = client.get('https://control:8030/security',headers={'Authorization':'Bearer '+token})
+        response.raise_for_status()
+    print(json.dumps(response.json()))
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("prepare", "check", "networks"))
+    parser.add_argument("mode", choices=("prepare", "check", "networks", "security"))
     parser.add_argument("path", type=Path, nargs="?")
     parser.add_argument("--name", default="default")
     args = parser.parse_args()
@@ -155,6 +171,8 @@ if __name__ == "__main__":
             raise ValueError("RUNTIME_PATH_REQUIRED")
         elif args.mode == "prepare":
             prepare(args.path, args.name)
+        elif args.mode == 'security':
+            security(args.path)
         else:
             check(args.path)
     except Exception as exc:

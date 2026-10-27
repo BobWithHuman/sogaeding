@@ -5,6 +5,7 @@ Only authenticated adapters may write events; model-supplied provenance is ignor
 """
 import asyncio
 import json
+import secrets
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -29,6 +30,27 @@ from app.transparent.retention import RetentionPolicy
 SPEC = "MVP-SPEC-5"
 POLICY = "hookgw-2026-10-16-v1"
 REASON_FORMAT = "sealed-decision-context-1"
+ASK_REASON_MESSAGES = {
+    'SENSITIVE_RESOURCE_REQUIRES_CONSENT': '이 대상은 서버 정책에 사용자 확인이 필요한 리소스로 등록되어 있습니다. 자동으로 실행하지 않고 이번 작업의 동의를 확인합니다.',
+    'OUTSIDE_TASK_CAPABILITY_REQUIRES_CONSENT': '이번 동작에 사용하는 권한은 서버 정책상 별도 사용자 확인이 필요합니다. 현재 위임 범위로 자동 실행할 수 없습니다.',
+    'PROTECTED_USER_PATH_REQUIRES_CONSENT': '사용자 보호 경로에 접근하는 동작이므로 이번 접근에 대한 사용자 확인이 필요합니다.',
+    'SIDE_EFFECT_OR_CONSENT_NOT_DELEGATED': '파일 변경 등 부수 효과를 자동 실행할 권한이 확인되지 않아 사용자 확인이 필요합니다.',
+    'SECURITY_CONFIGURATION_REQUIRES_CONSENT': '보안 설정에 영향을 주는 동작이므로 사용자 확인이 필요합니다.',
+    'NONPUBLIC_READ_REQUIRES_CONSENT': '비공개 자료를 읽는 동작이므로 이번 접근에 대한 사용자 확인이 필요합니다.',
+    'PRIVATE_MUTATION_REQUIRES_CONSENT': '비공개 자료를 변경하는 동작이므로 사용자 확인이 필요합니다.',
+    'DEMO_AUTHORITY_OR_SEMANTICS_UNRESOLVED': '현재 문맥만으로 요청 범위나 실행 권한을 충분히 확정할 수 없어 사용자 확인이 필요합니다.',
+}
+
+
+def ask_reason_details(reasons):
+    """Static server explanations only; never repeat source/model text as a reason."""
+    result=[]
+    for reason in reasons[:8]:
+        code=reason if isinstance(reason,str) and reason in ASK_REASON_MESSAGES else 'ASK_REVIEW_REQUIRED'
+        item={'code':code,'message':ASK_REASON_MESSAGES.get(code,'현재 엔진 정책상 바로 실행할 수 없어 실제 사용자 확인과 재검토가 필요합니다.')}
+        if item not in result:
+            result.append(item)
+    return result or [{'code':'ASK_REVIEW_REQUIRED','message':'현재 엔진 정책상 실제 사용자 확인과 재검토가 필요합니다.'}]
 
 
 class Rejected(Exception):
@@ -81,10 +103,13 @@ class Engine:
                 CREATE TABLE IF NOT EXISTS demo_rpc_bindings(call TEXT PRIMARY KEY,rpc_hash TEXT);
                 CREATE TABLE IF NOT EXISTS demo_confirmations(call TEXT PRIMARY KEY,binding TEXT,expires REAL,
                    approved_at REAL,resumed INTEGER DEFAULT 0,reason_hash TEXT);
+                CREATE TABLE IF NOT EXISTS asks(id TEXT PRIMARY KEY,call TEXT UNIQUE,state TEXT,
+                   expires REAL,consumed INTEGER DEFAULT 0);
             """)
             security_audit.initialize(db)
             # Process restart cannot establish whether the host/upstream executed.
             db.execute("UPDATE calls SET state='UNKNOWN' WHERE state IN ('ANALYZING','EXECUTING')")
+            self._sweep_asks(db)
             # Upgrade only the explicitly opened product database. Frozen evaluation
             # bundles are never opened by the submission tooling. Keep the complete
             # old context encrypted; previously issued approvals cannot survive its binding change.
@@ -172,6 +197,7 @@ class Engine:
         db.execute("DELETE FROM demo_confirmations WHERE call IN (SELECT id FROM calls WHERE session=?)", (session,))
         db.execute("DELETE FROM demo_rpc_bindings WHERE call IN (SELECT id FROM calls WHERE session=?)", (session,))
         db.execute("DELETE FROM demo_intents WHERE call IN (SELECT id FROM calls WHERE session=?)", (session,))
+        db.execute("DELETE FROM asks WHERE call IN (SELECT id FROM calls WHERE session=?)", (session,))
         db.execute("DELETE FROM sources WHERE session=?", (session,))
         db.execute("DELETE FROM calls WHERE session=?", (session,))
         db.execute("DELETE FROM turns WHERE session=?", (session,))
@@ -186,6 +212,7 @@ class Engine:
             db.execute("DELETE FROM deletion_evidence WHERE id NOT IN (SELECT id FROM deletion_evidence ORDER BY id DESC LIMIT 4096)")
 
     def cleanup(self, db):
+        self._sweep_asks(db)
         # Old sessions used a fixed 24h lease. Do not use migration time as creation time.
         db.execute("INSERT OR IGNORE INTO retention_deadlines SELECT id,deadline-86400,deadline-86400+? FROM expiry WHERE kind='session'", (self.retention.history_seconds,))
         expired = db.execute("SELECT session FROM retention_deadlines WHERE min(deadline,created+?)<?",
@@ -281,7 +308,7 @@ class Engine:
                 if owner and owner[0] != machine:
                     raise Rejected("CONNECTION_BINDING")
                 db.execute("UPDATE calls SET state='UNKNOWN' WHERE session=? AND state='EXECUTING'", (session,))
-                db.execute("UPDATE calls SET state='STALE' WHERE session=? AND state IN ('PENDING','ANALYZING','READY','CONFIRM','APPROVED')", (session,))
+                db.execute("UPDATE calls SET state='STALE' WHERE session=? AND state IN ('PENDING','ANALYZING','READY','CONFIRM','APPROVED','ASK')", (session,))
                 db.execute("UPDATE approvals SET consumed=1 WHERE call IN (SELECT id FROM calls WHERE session=?)", (session,))
                 db.execute("UPDATE demo_confirmations SET resumed=1 WHERE call IN (SELECT id FROM calls WHERE session=?)", (session,))
                 db.execute("DELETE FROM expiry WHERE kind='connection' AND id IN (SELECT hash FROM connections WHERE session=? AND machine=?)", (session, machine))
@@ -291,6 +318,7 @@ class Engine:
             db.execute("DELETE FROM connections WHERE hash=?", (connection_hash,))
             db.execute("DELETE FROM expiry WHERE kind='connection' AND id=?", (connection_hash,))
             self.audit(db, "CONNECTION", "CLI_SESSION_CLOSED")
+            self._sweep_asks(db)
             from app.transparent.security_audit import record
             record(self,db,'SESSION_CLOSE','machine:'+machine,session or connection_hash,'COMPLETED')
         return {"state": "CLOSED"}
@@ -336,7 +364,8 @@ class Engine:
                 created = time.time()
                 db.execute("INSERT INTO expiry VALUES('session',?,?)", (session, created + self.retention.session_seconds))
                 db.execute("INSERT INTO retention_deadlines VALUES(?,?,?)", (session, created, created + self.retention.history_seconds))
-            db.execute("UPDATE calls SET state='STALE' WHERE session=? AND state IN ('PENDING','CONFIRM','READY','APPROVED','ANALYZING')", (session,))
+            db.execute("UPDATE calls SET state='STALE' WHERE session=? AND state IN ('PENDING','CONFIRM','READY','APPROVED','ANALYZING','ASK')", (session,))
+            self._sweep_asks(db)
             self.audit(db, "TURN", "RECORDED")
         return {"turn": turn}
 
@@ -361,6 +390,8 @@ class Engine:
                 raise Rejected("CALL_LIMIT")
             if db.execute("SELECT 1 FROM calls WHERE id=? UNION SELECT 1 FROM tombstones WHERE id=?", (call, call)).fetchone():
                 raise Rejected("CALL_REPLAY")
+            db.execute("UPDATE calls SET state='STALE' WHERE id IN (SELECT call FROM asks WHERE state IN ('ISSUED','PRESENTED','ANSWER_RECEIVED')) AND session=?", (session,))
+            self._sweep_asks(db)
             db.execute("INSERT INTO calls VALUES(?,?,?,?,?,'PENDING',NULL,NULL,?,?)",
                        (call, session, turn, h, path, self.seal(candidate), time.time()))
             self.audit(db, "PRE", "REGISTERED", call)
@@ -497,6 +528,8 @@ class Engine:
         row = db.execute("SELECT * FROM calls WHERE id=?", (call,)).fetchone()
         if not row or row["state"] != "READY" or row["path"] != "mcp":
             raise Rejected("FORWARD_REPLAY")
+        if row['decision'] == 'CONFIRM':
+            raise Rejected('LEGACY_CONFIRM_READ_ONLY')
         self._current(db, machine, row["session"], row["turn"])
         if connection_token is not None:
             connection_hash = digest(connection_token)
@@ -575,7 +608,176 @@ class Engine:
                                     "model_requests": 0}
         self.audit(db, "REVALIDATE", "PUBLIC_READ_CURRENT", row["id"])
 
-    async def authorize(self, machine, call, *, demo_connection=None):
+    def _ask_update(self, db, row, state, **fields):
+        value = self._ask_value(db, row)
+        value.update(fields)
+        self._ask_store(db, row['call'], value)
+        db.execute('UPDATE asks SET state=? WHERE id=?', (state, row['id']))
+        self.audit(db, 'ASK', state, row['call'])
+
+    def _ask_value(self, db, row):
+        reason = db.execute('SELECT reason FROM calls WHERE id=?', (row['call'],)).fetchone()
+        return self.read_reason(reason[0])['ask_record']
+
+    def _ask_store(self, db, call, value):
+        # Reuse the existing encrypted context envelope: rotation, backup and
+        # retention already cover calls.reason. No second secret store to rotate.
+        reason = self.read_reason(db.execute('SELECT reason FROM calls WHERE id=?', (call,)).fetchone()[0])
+        reason['ask_record'] = value
+        db.execute('UPDATE calls SET reason=? WHERE id=?', (self.write_reason(reason),call))
+
+    def _sweep_asks(self, db):
+        """Persist terminal states even when the next reply itself is rejected."""
+        for ask in db.execute("SELECT * FROM asks WHERE state IN ('ISSUED','PRESENTED','ANSWER_RECEIVED')").fetchall():
+            binding = self._ask_value(db, ask)
+            row = db.execute('SELECT * FROM calls WHERE id=?', (ask['call'],)).fetchone()
+            code = None
+            if ask['expires'] <= time.time():
+                code = 'EXPIRED'
+            elif not row or row['state'] not in ('ASK','PENDING','ANALYZING'):
+                code = 'CANCELLED'
+            else:
+                try:
+                    self._ask_current(db, ask, binding)
+                except Rejected:
+                    code = 'CANCELLED'
+            if code:
+                self._ask_update(db, ask, code, resolved_at=time.time(), terminal_reason=code)
+                db.execute('UPDATE asks SET consumed=1 WHERE id=?', (ask['id'],))
+                db.execute("UPDATE calls SET state='STALE' WHERE id=? AND state IN ('ASK','PENDING','ANALYZING')", (ask['call'],))
+
+    def _ask_current(self, db, ask, binding):
+        row = db.execute('SELECT * FROM calls WHERE id=?', (ask['call'],)).fetchone()
+        self._current(db, binding['machine'], binding['session'], binding['turn'])
+        sources = [self.open(x[0]) for x in db.execute('SELECT body FROM sources WHERE session=? ORDER BY rowid', (binding['session'],))]
+        prompts = [self.open(x[0])['prompt'] for x in db.execute('SELECT body FROM turns WHERE session=? ORDER BY rowid', (binding['session'],))]
+        request = canonical({'actual_user_turns_chronological': prompts, 'latest_turn': len(prompts)-1})
+        actual_grant = digest(canonical({'grant': self.grant, 'policy': self.policy} if self.policy_router else self.grant))
+        if (not row or row['hash'] != binding['action_hash']
+                or digest(canonical(self.open(row['body']))) != binding['action_hash']
+                or row['session'] != binding['session'] or row['turn'] != binding['turn']
+                or self.policy != binding['policy'] or actual_grant != binding['grant_hash']
+                or self.grant_hash != actual_grant or digest(request) != binding['request_hash']
+                or digest(canonical(sources)) != binding['source_hash']):
+            raise Rejected('ASK_SNAPSHOT_STALE')
+        if binding['connection_hash']:
+            self.expires(db, 'connection', binding['connection_hash'])
+            connection = db.execute('SELECT machine,session FROM connections WHERE hash=?', (binding['connection_hash'],)).fetchone()
+            if not connection or tuple(connection) != (binding['machine'], binding['session']):
+                raise Rejected('ASK_CONNECTION_BINDING')
+        if ask['expires'] <= time.time():
+            raise Rejected('ASK_EXPIRED')
+        return row
+
+    def _issue_ask(self, db, machine, row, connection):
+        if connection is not None:
+            self.expires(db, 'connection', digest(connection))
+            owner = db.execute('SELECT machine,session FROM connections WHERE hash=?', (digest(connection),)).fetchone()
+            if not owner or tuple(owner) != (machine, row['session']):
+                raise Rejected('ASK_CONNECTION_BINDING')
+        context = self.read_reason(db.execute('SELECT reason FROM calls WHERE id=?', (row['id'],)).fetchone()[0])
+        ask_id, now = 'ask-' + uuid4().hex, time.time()
+        candidate = self.open(row['body'])
+        reason_details = ask_reason_details(context['reasons'])
+        # Exact content is shown only in the agent's trusted form, never in summary history.
+        question = ('This tool is paused. Do you want this exact candidate reconsidered? '
+                    'A yes does not override policy or guarantee execution. '
+                    '보류 이유: ' + ' '.join(r['message'] for r in reason_details) +
+                    ' Candidate: ' + canonical(candidate))
+        value = {k: context[k] for k in ('action_hash','request_hash','source_hash','grant_hash','policy')}
+        value.update(machine=machine, session=row['session'], turn=row['turn'],
+                     connection_hash=digest(connection) if connection else None, nonce_hash=None,
+                     question=question, reasons=context['reasons'], reason_details=reason_details, issued_at=now,
+                     presented_at=None, answered_at=None, resolved_at=None, outcome=None)
+        self._ask_store(db, row['id'], value)
+        db.execute("INSERT INTO asks VALUES(?,?,'ISSUED',?,0)", (ask_id,row['id'],now+120))
+        # Nonce is minted later for the authenticated stdio bridge; it never leaves in /event.
+        self.audit(db, 'ASK', 'ISSUED', row['id'])
+        return {'ask_id': ask_id, 'state': 'ISSUED', 'question': question, 'reasons': context['reasons'],
+                'reason_details':reason_details, 'expires_at': now+120}
+
+    def pending_ask(self, machine, session, connection, tool, args):
+        with self.db() as db:
+            self._sweep_asks(db)
+        h = digest(canonical({'tool':tool,'args':args,'route':'mcp'}))
+        with self.db() as db:
+            current = self._current(db, machine, session)
+            rows = db.execute("SELECT a.* FROM asks a JOIN calls c ON c.id=a.call WHERE c.session=? AND c.turn=? AND c.hash=? AND c.state='ASK' AND a.state='ISSUED' AND a.consumed=0", (session,current['turn'],h)).fetchall()
+            if not rows:
+                return {'ask': None}
+            if len(rows) != 1:
+                raise Rejected('ASK_NOT_UNIQUE')
+            row = rows[0]
+            value = self._ask_value(db, row)
+            if value['nonce_hash'] is not None:
+                raise Rejected('ASK_ALREADY_CLAIMED')
+            self._ask_current(db, row, value)
+            if value['connection_hash'] != digest(connection):
+                raise Rejected('ASK_CONNECTION_BINDING')
+            nonce = secrets.token_urlsafe(32)
+            value.update(nonce_hash=digest(nonce))
+            # Claim once; another transport cannot issue a second prompt for this request.
+            self._ask_store(db, row['call'], value)
+            self.audit(db, 'ASK', 'DELIVERY_REQUESTED', row['call'])
+            return {'ask': {'ask_id':row['id'], 'nonce':nonce, 'question':value['question'],
+                            'reasons':value['reasons'], 'reason_details':ask_reason_details(value['reasons']),
+                            'expires_at':row['expires']}}
+
+    def ask_presented(self, machine, connection, ask_id, nonce):
+        with self.db() as db:
+            row, value = self._ask_reply_binding(db, machine, connection, ask_id, nonce)
+            if value['presented_at'] is not None:
+                raise Rejected('ASK_REPLAY')
+            self._ask_update(db, row, 'PRESENTED', presented_at=time.time())
+        return {'state':'PRESENTED'}
+
+    def _ask_reply_binding(self, db, machine, connection, ask_id, nonce):
+        row = db.execute('SELECT * FROM asks WHERE id=?', (ask_id,)).fetchone()
+        if not row or row['state'] not in ('ISSUED','PRESENTED') or row['consumed']:
+            raise Rejected('ASK_REPLAY_OR_TERMINAL')
+        value = self._ask_value(db, row)
+        if (value['machine'] != machine or value['connection_hash'] != digest(connection)
+                or not value['nonce_hash'] or not secrets.compare_digest(value['nonce_hash'], digest(nonce))):
+            raise Rejected('ASK_RESPONSE_BINDING')
+        self._ask_current(db, row, value)
+        return row, value
+
+    async def answer_ask(self, machine, connection, ask_id, nonce, answer):
+        if answer not in ('YES','NO','CANCEL'):
+            raise Rejected('ASK_INVALID_ANSWER')
+        with self.db() as db:
+            self._sweep_asks(db)
+        with self.db() as db:
+            row, value = self._ask_reply_binding(db, machine, connection, ask_id, nonce)
+            if value['presented_at'] is None:
+                raise Rejected('ASK_NOT_PRESENTED')
+            db.execute('UPDATE asks SET consumed=1 WHERE id=?', (ask_id,))
+            self._ask_update(db, row, 'ANSWER_RECEIVED', answered_at=time.time(), answer=answer)
+            if answer != 'YES':
+                fresh = db.execute('SELECT * FROM asks WHERE id=?', (ask_id,)).fetchone()
+                state = 'DECLINED' if answer == 'NO' else 'CANCELLED'
+                self._ask_update(db, fresh, state, resolved_at=time.time(), outcome='DENY')
+                context = self.read_reason(db.execute('SELECT reason FROM calls WHERE id=?', (row['call'],)).fetchone()[0])
+                context['reasons'] = ['USER_DECLINED' if answer == 'NO' else 'USER_CANCELLED']
+                db.execute("UPDATE calls SET state='DENIED',decision='DENY',reason=? WHERE id=?", (self.write_reason(context),row['call']))
+                return {'decision':'DENY','state':state}
+            db.execute("UPDATE calls SET state='PENDING' WHERE id=? AND state='ASK'", (row['call'],))
+        return await self.authorize(machine, row['call'], ask_id=ask_id)
+
+    def ask_history(self, db, call):
+        fields = ('issued_at','presented_at','answered_at','resolved_at','outcome','terminal_reason')
+        result = []
+        for row in db.execute('SELECT * FROM asks WHERE call=?', (call,)):
+            value = self._ask_value(db, row)
+            result.append({'ask_id':row['id'], 'state':row['state'], 'expires_at':row['expires'],
+                           'question_redacted':'Reconsider the exact held tool candidate?',
+                           'hold_reasons':value['reasons'],
+                           'reason_details':ask_reason_details(value['reasons']),
+                           'answer_summary':'User response received; content withheld' if value.get('answered_at') else None,
+                           **{k:value.get(k) for k in fields}})
+        return result
+
+    async def authorize(self, machine, call, *, demo_connection=None, ask_connection=None, ask_id=None):
         with self.db() as db:
             row = db.execute("SELECT * FROM calls WHERE id=?", (call,)).fetchone()
             if not row:
@@ -583,6 +785,11 @@ class Engine:
             self._current(db, machine, row["session"], row["turn"])
             if row["state"] != "PENDING":
                 raise Rejected("CALL_REPLAY")
+            if ask_id is not None:
+                ask_row = db.execute("SELECT * FROM asks WHERE id=? AND call=? AND state='ANSWER_RECEIVED' AND consumed=1", (ask_id,call)).fetchone()
+                if not ask_row:
+                    raise Rejected('ASK_RECHECK_BINDING')
+                self._ask_current(db, ask_row, self._ask_value(db, ask_row))
             stopped = db.execute("SELECT details FROM analysis_stops WHERE session_hash=? AND turn_hash=?",
                                  (digest(row["session"]), digest(row["turn"]))).fetchone()
             if stopped:
@@ -653,8 +860,28 @@ class Engine:
                     policy_trace = getattr(exc, "policy_trace", {"routing": "ANALYSIS_FAILED", "contract": self.policy_router.contract})
             else:
                 decision, reasons, diagnostic, view_checks = await self._legacy_analysis(snapshot)
+        if ask_id is not None:
+            with self.db() as db:
+                self._sweep_asks(db)
         with self.db() as db:
             self._current(db, machine, row["session"], row["turn"])
+            if ask_id is not None:
+                ask_row = db.execute("SELECT * FROM asks WHERE id=? AND state='ANSWER_RECEIVED'", (ask_id,)).fetchone()
+                if not ask_row:
+                    return {'call':call, 'decision':'DENY', 'state':'STALE', 'reasons':['ASK_RECHECK_CANCELLED']}
+                try:
+                    self._ask_current(db, ask_row, self._ask_value(db, ask_row))
+                except Rejected:
+                    decision, reasons = 'DENY', ['ASK_SNAPSHOT_STALE']
+                else:
+                    from app.transparent.jev_gate6 import JevPolicyGate6
+                    if isinstance(self.policy_router, JevPolicyGate6):
+                        decision, reasons = self.policy_router.resolve_ask(decision, reasons, policy_trace)
+                    else:
+                        decision, reasons = 'DENY', ['ASK_RECHECK_UNSUPPORTED']
+            # Legacy policy composers remain readable; every newly held product call is ASK.
+            if decision == 'CONFIRM':
+                decision = 'ASK'
             fresh = [self.open(x[0]) for x in db.execute("SELECT body FROM sources WHERE session=? ORDER BY rowid", (row["session"],))]
             if diagnostic:
                 db.execute("INSERT OR IGNORE INTO analysis_stops VALUES(?,?,?)",
@@ -663,16 +890,21 @@ class Engine:
                 decision, reasons = "DENY", ["SOURCE_CHANGED"]
             if decision == "ALLOW" and db.execute("SELECT 1 FROM calls WHERE session=? AND id<>? AND state IN ('READY','EXECUTING','UNKNOWN','ANALYZING')", (row["session"], call)).fetchone():
                 decision, reasons = "DENY", ["PRIOR_RESULT_UNOBSERVED"]
-            state = ("READY" if row["path"] == "mcp" else "EXECUTING") if decision == "ALLOW" else "CONFIRM" if decision == "CONFIRM" else "DENIED"
+            state = ("READY" if row["path"] == "mcp" else "EXECUTING") if decision == "ALLOW" else "ASK" if decision == "ASK" else "DENIED"
+            ask_record = self._ask_value(db, ask_row) if ask_id is not None else None
             changed = db.execute("UPDATE calls SET state=?,decision=?,reason=? WHERE id=? AND state='ANALYZING'",
                        (state, decision, self.write_reason({"reasons": reasons, "diagnostic": diagnostic, "view_checks": view_checks, "policy_trace": policy_trace, "snapshot_sha256": snapshot_hash, "evidence_contract": self.policy_router.contract if self.policy_router else SPAN_CONTRACT, "prompt_version": self.policy_router.prompt_version if self.policy_router else SPAN_PROMPT_VERSION, "source_hash": source_hash, "analyzed_at": time.time(), "grant_hash": self.grant_hash, "request_hash": digest(request), "action_hash": row["hash"], "forward_revalidation": "public-read-1", "spec": SPEC, "policy": self.policy}), call))
             if changed.rowcount != 1:
                 raise Rejected("RESERVATION_LOST")
-            if demo_connection is not None and decision == "CONFIRM" and db.execute("SELECT 1 FROM demo_rpc_bindings WHERE call=?", (call,)).fetchone():
-                from app.transparent.demo_approval import remember_in_db
-                remember_in_db(self, db, machine, call, demo_connection)
+            ask_payload = None
+            if ask_id is not None:
+                self._ask_store(db, call, ask_record)
+                self._ask_update(db, ask_row, 'RECHECKED', resolved_at=time.time(), outcome=decision)
+            elif decision == 'ASK':
+                ask_payload = self._issue_ask(db, machine, row, ask_connection)
             self.audit(db, "DECISION", reasons[0], call)
-        return {"call": call, "decision": decision, "state": state, "reasons": reasons, "diagnostic": diagnostic}
+        return {"call": call, "decision": decision, "state": state, "reasons": reasons, "diagnostic": diagnostic,
+                **({'ask':ask_payload} if ask_payload else {})}
 
     async def _legacy_analysis(self, snapshot):
         decision, reasons, diagnostic = "DENY", ["ANALYSIS_UNAVAILABLE"], None
@@ -832,5 +1064,7 @@ class Engine:
         with self.db() as db:
             self.cleanup(db)
             return [{**{key: row[key] for key in ("id", "session", "turn", "path", "state", "decision", "created")},
+                     'initial_decision':'ASK' if db.execute('SELECT 1 FROM asks WHERE call=?', (row['id'],)).fetchone() else row['decision'],
+                     'ask_history':self.ask_history(db, row['id']),
                      "reason": canonical(self.read_reason(row["reason"])) if row["reason"] else None}
                     for row in db.execute("SELECT c.* FROM calls c JOIN sessions s ON s.id=c.session WHERE (? IS NULL OR s.machine=?) ORDER BY c.created DESC LIMIT 100", (machine, machine))]

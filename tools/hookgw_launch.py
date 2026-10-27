@@ -36,11 +36,11 @@ def trusted_send():
     return module.send
 
 
-def check_conflicts(root, args, api=False):
+def check_conflicts(root, args, api=False, strict_product=False):
     # Refuse silently replacing an existing hook array; never print config values.
     home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
     candidates = {home / "config.toml", *(p / ".codex/config.toml" for p in (root, *root.parents))}
-    if api:
+    if api or strict_product:
         # Legacy managed defaults override CLI flags. Do not start under an
         # unreviewed managed layer or attempt to change its authentication rules.
         managed = {home / "managed_config.toml", Path.home() / ".codex/managed_config.toml"}
@@ -57,11 +57,13 @@ def check_conflicts(root, args, api=False):
         if path.is_file():
             with path.open("rb") as stream:
                 config = tomllib.load(stream)
-            layers = [config, *config.get("profiles", {}).values()] if api else [config]
+            layers = [config, *config.get("profiles", {}).values()] if api or strict_product else [config]
             # CLI /hooks persists consent under hooks.state. It is not an
             # executable hook array and stays intact under per-event overlays.
             if any(hooks and (not isinstance(hooks, dict) or set(hooks) - {"state"}) for hooks in (layer.get("hooks") for layer in layers)):
                 raise SystemExit("Existing hook config requires a reviewed merge; no arrays were overwritten.")
+            if strict_product and any("with_human" in layer.get("mcp_servers", {}) for layer in layers):
+                raise SystemExit("Existing with_human MCP config requires a reviewed merge; no definitions were overwritten.")
             if api and any(layer.get("forced_login_method") or layer.get("forced_chatgpt_workspace_id") for layer in layers):
                 raise SystemExit("Managed login restriction requires review; no login state changed.")
             if api and any(API_PROVIDER in layer.get("model_providers", {}) for layer in layers):
@@ -92,6 +94,7 @@ def overrides(root, host, python):
     values += ["-c", "mcp_servers.with_human.command=" + json.dumps(python),
                "-c", "mcp_servers.with_human.args=" + json.dumps(["-I", str(root / "tools/hookgw_mcp.py"), str(host)]),
                "-c", 'mcp_servers.with_human.env_vars=["WITH_HUMAN_CONNECTION"]']
+    values += ['-c', 'mcp_servers.with_human.tool_timeout_sec=180']
     return values
 
 

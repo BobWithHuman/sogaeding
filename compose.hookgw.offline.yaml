@@ -1,6 +1,0 @@
-# Explicit offline-only fixture. Do not use this override for user model validation.
-services:
-  control:
-    command: [python, /tests/hookgw/fixture_server.py]
-    volumes:
-      - ./tests:/tests:ro

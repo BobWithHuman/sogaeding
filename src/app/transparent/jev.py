@@ -2,8 +2,9 @@
 
 Official wire reference: https://docs.typesafe.ai/api and /confidence.
 No SDK, retries, fallback, environment proxy, debug body, or model calls at import.
-The separate provider ledger reserves the full 64k context before each attempt;
-failed/cancelled requests retain both reservations. Actual usage is informational.
+The separate provider ledger always records attempts and actual usage. Explicit
+unlimited mode imposes no request/token quota or token reservation. Historical
+bounded configurations retain their original reservations and binding.
 """
 
 import asyncio
@@ -27,7 +28,6 @@ MODEL = "jev-1.13.0"
 MAX_REQUEST_BYTES = 24576
 MAX_RESPONSE_BYTES = 65536
 RESERVED_INPUT_TOKENS = 64000
-MAX_USAGE_TOKENS = 1000000
 QUESTION_ID = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
 OPTION_ID = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,63}\Z")
 POLICY_ID = re.compile(r"[A-Za-z0-9_.-]{1,128}\Z")
@@ -65,9 +65,9 @@ def usage_observation(value):
     if not isinstance(raw, dict):
         return None, "UNKNOWN_INVALID"
     known = {}
-    for field, limit in (("input_tokens", RESERVED_INPUT_TOKENS), ("output_tokens", MAX_USAGE_TOKENS)):
+    for field in ("input_tokens", "output_tokens"):
         number = raw.get(field)
-        known[field] = number if type(number) is int and 0 <= number <= limit else None
+        known[field] = number if type(number) is int and number >= 0 else None
     count = sum(v is not None for v in known.values())
     return (known if count else None), "VALID" if count == 2 else "PARTIAL" if count else "UNKNOWN_MISSING" if all(raw.get(k) is None for k in known) else "UNKNOWN_INVALID"
 
@@ -82,18 +82,21 @@ class JevSettings:
     input_token_limit: int | None = None
     policy_id: str | None = None
     data_policy: str = "masked_minimal_v1"
+    unlimited: bool = False
 
     def authorized(self):
         if not isinstance(self.key_path, (str, Path)) or not isinstance(self.budget_path, (str, Path)):
             return False
+        limits_valid = (self.unlimited is True and self.request_limit is None and self.input_token_limit is None
+                        or self.unlimited is False and type(self.request_limit) is int
+                        and 1 <= self.request_limit <= 1000 and type(self.input_token_limit) is int
+                        and RESERVED_INPUT_TOKENS <= self.input_token_limit <= 64000000)
         return bool(
             self.enabled is True and self.model == MODEL and self.data_policy in ("nonpersonal_only", "masked_minimal_v1")
             and self.key_path is not None and Path(self.key_path).name == "jev.api-key"
             and self.budget_path is not None
             and Path(self.budget_path).name == "typesafe-budget.sqlite3"
-            and type(self.request_limit) is int and 1 <= self.request_limit <= 1000
-            and type(self.input_token_limit) is int
-            and RESERVED_INPUT_TOKENS <= self.input_token_limit <= 64000000
+            and limits_valid
             and isinstance(self.policy_id, str) and POLICY_ID.fullmatch(self.policy_id)
         )
 
@@ -193,12 +196,12 @@ def validate_response(value, questions):
     if not isinstance(answers, dict) or set(answers) != set(questions):
         raise ResponseValidationError("QUESTIONS", "COVERAGE", missing_questions=len(set(questions) - set(answers)) if isinstance(answers, dict) else len(questions), extra_questions=len(set(answers) - set(questions)) if isinstance(answers, dict) else 0)
     fields(raw_usage, {"input_tokens", "output_tokens"}, "USAGE")
-    for field, limit in (("input_tokens", RESERVED_INPUT_TOKENS), ("output_tokens", MAX_USAGE_TOKENS)):
+    for field in ("input_tokens", "output_tokens"):
         # Public SDK permits unreported/null counters. They remain UNKNOWN and
         # never release a reservation. Bad types/ranges still fail closed.
         number = raw_usage[field]
-        if number is not None and (issue := _numeric_issue(number, integer=True, maximum=limit)):
-            raise ResponseValidationError("USAGE", issue, usage_field=field.upper())
+        if number is not None and (type(number) is not int or number < 0):
+            raise ResponseValidationError("USAGE", "TYPE" if type(number) is not int else "RANGE", usage_field=field.upper())
     usage, _ = usage_observation(value)
     validated, comparisons = {}, []
     for index, (key, question) in enumerate(questions.items()):
@@ -290,7 +293,8 @@ class JevClient:
         path.parent.mkdir(parents=True, exist_ok=True)
         binding = canonical({"provider": "typesafe", "model": MODEL, "policy_id": settings.policy_id,
                              "request_limit": settings.request_limit,
-                             "input_token_limit": settings.input_token_limit})
+                             "input_token_limit": settings.input_token_limit,
+                             **({"unlimited":True} if settings.unlimited else {})})
         with sqlite3.connect(path, timeout=1) as db:
             db.execute("BEGIN IMMEDIATE")
             tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -304,11 +308,11 @@ class JevClient:
             if not previous:
                 db.execute("INSERT INTO jev_policy VALUES (1,?)", (binding,))
             count, tokens = db.execute("SELECT count(*),coalesce(sum(input_reserved),0) FROM jev_attempts").fetchone()
-            if count >= settings.request_limit or tokens + RESERVED_INPUT_TOKENS > settings.input_token_limit:
+            if not settings.unlimited and (count >= settings.request_limit or tokens + RESERVED_INPUT_TOKENS > settings.input_token_limit):
                 raise AnalysisFailure("REQUEST_BUDGET_EXHAUSTED", view)
             try:
                 db.execute("INSERT INTO jev_attempts VALUES (?,?,?,'STARTED',?,NULL)",
-                           (analysis_id, view, time.time(), RESERVED_INPUT_TOKENS))
+                           (analysis_id, view, time.time(), 0 if settings.unlimited else RESERVED_INPUT_TOKENS))
             except sqlite3.IntegrityError:
                 raise AnalysisFailure("REQUEST_BUDGET_EXHAUSTED", view) from None
 

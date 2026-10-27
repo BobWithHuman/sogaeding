@@ -4,7 +4,7 @@ Resource rules are trusted server configuration, never tool/event arguments.
 DTAP's Linux identities, dataset paths, simulators and runner are not imported.
 """
 from app.pdp.diagnostics import AnalysisFailure
-from app.transparent.gate_policy import POLICY, RISK_HOLDS, RULE, compose
+from app.transparent.gate_policy import POLICY, RISK_HOLDS, RULE, compose, consent_semantics
 from app.transparent.jev_core_v5p1 import JevPolicyCurrent
 from app.transparent.jev_policy import configuration_risk
 
@@ -32,6 +32,19 @@ def file_authority(snapshot, parsed):
 
 class JevPolicyGate6(JevPolicyCurrent):
     policy = POLICY
+
+    def resolve_ask(self, decision, reasons, trace):
+        """Only exact user consent holds may resolve after a fresh complete evaluation."""
+        if decision == 'DENY':
+            return decision, reasons
+        access = (trace or {}).get('gate6_resource_access') or {}
+        if (decision in ('ALLOW', 'CONFIRM', 'ASK') and access.get('authorized') is True
+                and access.get('prohibited') is not True
+                and set(access.get('semantic_consent', [])) <= CONSENT_REASONS
+                and (decision == 'ALLOW' or bool(access.get('semantic_consent')))
+                and consent_semantics(trace['view_observations'])):
+            return 'ALLOW', ['USER_ANSWER_AND_FRESH_POLICY_AFFIRMED']
+        return 'DENY', ['ASK_RECHECK_UNRESOLVED']
 
     async def evaluate(self, snapshot):
         try:

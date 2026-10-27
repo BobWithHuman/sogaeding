@@ -162,7 +162,7 @@ def create_app(engine, keys, *, max_body_bytes=131072):
             return {"status": "ok"}
         auth(request, "machine")
         if engine.policy_router:
-            return {"spec": "MVP-SPEC-5", "judge_mode": "JEV_OFFLINE_FIXTURE" if getattr(engine.policy_router.client, "is_fixture", False) else "JEV_USER_LIVE" if engine.policy_router.client.settings.authorized() else "JEV_RULES_ONLY", "decision_policy": engine.policy,
+            return {"spec": "MVP-SPEC-5", 'decision_contract':'ASK_V1', 'ask_connector':'CODEX_MCP_FORM_CAPABILITY_REQUIRED', "judge_mode": "JEV_OFFLINE_FIXTURE" if getattr(engine.policy_router.client, "is_fixture", False) else "JEV_USER_LIVE" if engine.policy_router.client.settings.authorized() else "JEV_RULES_ONLY", "decision_policy": engine.policy,
                     "jev_live": "NOT_AUTHORIZED" if not engine.policy_router.client.settings.authorized() else "USER_CONFIGURED_NOT_EVALUATED",
                     **({"demo_dispatch": "post_host_approval_v1"} if os.environ.get("HOOKGW_DEMO_DISPATCH") == "1" else {})}
         mode = "OFFLINE_FIXTURE" if getattr(engine.judge, "is_fixture", False) else "LIVE_USER" if engine.judge is not None else "UNAVAILABLE"
@@ -205,18 +205,38 @@ def create_app(engine, keys, *, max_body_bytes=131072):
             return engine.turn(m, session, value["turn"], value["prompt"], value["cwd"])
         if kind == "PreToolUse":
             result = engine.register(m, session, value["turn"], value["call"], value["tool"], value["args"], value["route"])
-            return {**result, **await engine.authorize(m, value["call"])}
+            return {**result, **await engine.authorize(m, value["call"], ask_connection=value['connection'])}
         if kind == "ApprovalPoll":
-            with engine.db() as db:
-                row = db.execute("SELECT state FROM calls WHERE id=? AND session=? AND turn=?", (value["call"], session, value["turn"])).fetchone()
-            if not row:
-                raise Rejected("UNKNOWN_CALL")
-            if row["state"] == "APPROVED":
-                return engine.consume_approval(m, value["call"], value["action_hash"])
-            return {"state": row["state"], "decision": "CONFIRM" if row["state"] == "CONFIRM" else "DENY"}
+            return {'decision':'DENY','state':'LEGACY_CONFIRM_READ_ONLY'}
         if kind == "PostToolUse":
             return engine.observe(m, value["call"], value["tool"], value["args"], value["output"], value.get("failed", False))
         raise Rejected("UNSUPPORTED_EVENT")
+
+    @app.post('/ask/pending')
+    async def ask_pending(request: Request):
+        auth(request, 'machine')
+        _, value = await body(request)
+        if (not isinstance(value, dict) or set(value) != {'connection','tool','args'}
+                or not isinstance(value['connection'], str) or not isinstance(value['tool'], str)
+                or not isinstance(value['args'], dict)):
+            raise Rejected('INVALID_EVENT')
+        m, session = engine.connection(value['connection'])
+        return engine.pending_ask(m, session, value['connection'], value['tool'], value['args'])
+
+    @app.post('/ask/presented')
+    @app.post('/ask/answer')
+    async def ask_response(request: Request):
+        auth(request, 'machine')
+        _, value = await body(request)
+        answering = request.url.path == '/ask/answer'
+        expected = {'connection','ask_id','nonce'} | ({'answer'} if answering else set())
+        if (not isinstance(value, dict) or set(value) != expected
+                or any(not isinstance(x, str) or not 0 < len(x) <= 512 for x in value.values())):
+            raise Rejected('INVALID_EVENT')
+        m, _ = engine.connection(value['connection'])
+        if answering:
+            return await engine.answer_ask(m, value['connection'], value['ask_id'], value['nonce'], value['answer'])
+        return engine.ask_presented(m, value['connection'], value['ask_id'], value['nonce'])
 
     @app.post("/transport-failure")
     async def failure(request: Request):
@@ -363,6 +383,7 @@ def create_app(engine, keys, *, max_body_bytes=131072):
             context = json.loads(row["reason"]) if row.get("reason") else {}
             reasons = [code for code in context.get("reasons", []) if isinstance(code, str) and re.fullmatch(r"[A-Z0-9_]{1,80}", code)]
             calls.append({"id": label(row["id"], 128) or digest(row["id"]),
+                          'initial_decision':row['initial_decision'], 'ask_history':row['ask_history'],
                           "decision": label(row["decision"]), "state": label(row["state"]),
                           "policy": label(context.get("policy"), 80),
                           "routing": label((context.get("policy_trace") or {}).get("routing")),
@@ -380,12 +401,9 @@ def create_app(engine, keys, *, max_body_bytes=131072):
 
     @app.post("/approval")
     async def approval(request: Request):
-        principal = auth(request, "human", "approval:write")
-        _, value = await body(request)
-        if (not isinstance(value, dict) or set(value) not in ({"call", "approve"}, {"call", "approve", "approval_binding"})
-                or type(value["approve"]) is not bool or not isinstance(value["call"], str)):
-            raise Rejected("INVALID_EVENT")
-        return engine.approval(principal["machine"], value["call"], value["approve"], value.get("approval_binding"), actor=request.state.actor)
+        auth(request, "human", "approval:write")
+        # Historical CONFIRM is retained for IR, never promoted to an ASK answer.
+        return JSONResponse({'code':'LEGACY_CONFIRM_READ_ONLY'}, status_code=409)
 
     @app.post("/sessions/forget")
     async def forget(request: Request):
@@ -415,6 +433,8 @@ def create_app(engine, keys, *, max_body_bytes=131072):
             db.execute('UPDATE security_alerts SET acknowledged=1 WHERE id=?', (value['id'],))
         return {'state':'ACKNOWLEDGED'}
 
+    from app.transparent.dashboard import register
+    register(app,engine,machine,auth)
     return app
 
 

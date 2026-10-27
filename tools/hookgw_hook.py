@@ -10,7 +10,6 @@ import re
 import ssl
 import stat
 import sys
-import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -80,7 +79,7 @@ def event_value(value):
 
 
 def control_result(value, stage="CONTROL_EVENT"):
-    if not isinstance(value, dict) or value.get("decision") not in ("ALLOW", "DENY", "CONFIRM"):
+    if not isinstance(value, dict) or value.get("decision") not in ("ALLOW", "DENY", "CONFIRM", "ASK"):
         raise HookFailure(stage, "RESPONSE_INVALID")
     if stage == "CONTROL_EVENT" and value["decision"] == "CONFIRM" and not isinstance(value.get("action_hash"), str):
         raise HookFailure(stage, "RESPONSE_INVALID")
@@ -182,7 +181,13 @@ def handle(host, value, connection):
     if guarded("WORKSPACE", lambda: Path(value["cwd"]).resolve()) != root:
         raise HookFailure("WORKSPACE", "WORKSPACE_MISMATCH")
     if event == "UserPromptSubmit":
-        body.update(prompt=value["prompt"], cwd=str(root))
+        engine_workspace = str(root)
+        if "engine_workspace" in profile:
+            if (profile.get("format") != "product-codex-1" or profile["engine_workspace"] != "/files"
+                    or profile.get("mcp_only") is not True):
+                raise HookFailure("WORKSPACE", "WORKSPACE_MISMATCH")
+            engine_workspace = profile["engine_workspace"]
+        body.update(prompt=value["prompt"], cwd=engine_workspace)
         guarded("CONTROL_EVENT", lambda: send(host, "/event", body))
         return reply(event, True, "")
     original = value["tool_name"]
@@ -192,6 +197,8 @@ def handle(host, value, connection):
         tool, route = original[len(prefix):], "mcp"
     args = value["tool_input"]
     if event == "PreToolUse" and route == "native":
+        if profile.get("mcp_only") is True:
+            raise HookFailure("NATIVE_SCOPE", "UNSUPPORTED_NATIVE_TOOL")
         guarded("NATIVE_SCOPE", lambda: native_scope(root, tool, args))
     body.update(call=value["session_id"] + ":" + value["tool_use_id"], tool=tool, args=args, route=route)
     if event == "PostToolUse":
@@ -199,16 +206,14 @@ def handle(host, value, connection):
         guarded("CONTROL_EVENT", lambda: send(host, "/event", body))
         return {}
     result = guarded("CONTROL_EVENT", lambda: control_result(send(host, "/event", body)))
+    if result['decision'] == 'ASK':
+        # Only the MCP bridge can collect a host elicitation response. Returning
+        # here does not authorize execution: private gateway authz still requires READY.
+        if route == 'mcp' and profile.get('format') == 'product-codex-1':
+            return {}
+        return reply(event, False, 'WITH_HUMAN_ASK: execution paused; this mode cannot collect a trusted user answer')
     if result["decision"] == "CONFIRM":
-        # Exact original call stays suspended while a human confirms in a separate terminal.
-        print("With Human exception: human approval required", file=sys.stderr)
-        deadline = time.monotonic() + 45
-        body.update(event="ApprovalPoll", action_hash=result["action_hash"])
-        while time.monotonic() < deadline:
-            time.sleep(1)
-            result = guarded("APPROVAL_POLL", lambda: control_result(send(host, "/event", body, timeout=5), "APPROVAL_POLL"))
-            if result["decision"] != "CONFIRM":
-                break
+        return reply(event, False, 'WITH_HUMAN_LEGACY_CONFIRM_READ_ONLY')
     return reply(event, result["decision"] == "ALLOW", "WITH_HUMAN_" + result["decision"])
 
 
@@ -225,8 +230,7 @@ def main():
         print(json.dumps(send(args.host, "/history", {}, True, "GET"), ensure_ascii=False, indent=2))
         return
     if args.action in ("approve", "reject"):
-        print(json.dumps(send(args.host, "/approval", {"call": args.call, "approve": args.action == "approve"}, True)))
-        return
+        raise SystemExit('LEGACY_CONFIRM_READ_ONLY: answer through the supported agent user form')
     event = "PreToolUse"
     try:
         data = guarded("INPUT_READ", lambda: sys.stdin.buffer.read(131073))

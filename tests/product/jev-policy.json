@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "data_policy": "masked_minimal_v1",
+  "model": "jev-1.13.0",
+  "request_limit": null,
+  "input_token_limit": null,
+  "policy_id": "product-gate6-example-replace-with-deployment-id",
+  "unlimited": true
+}

@@ -1,1 +1,0 @@
-The public release is ready; document the migration checklist.

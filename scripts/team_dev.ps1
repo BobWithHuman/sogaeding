@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('build','prepare','up','check','test','down','export')]
+    [ValidateSet('build','prepare','up','check','test','down')]
     [string]$Mode = 'check',
     [ValidatePattern('^[a-z0-9][a-z0-9-]{0,47}$')]
     [string]$RuntimeName = 'default',
@@ -10,7 +10,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $teamRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $teamRuntime = Join-Path $teamRoot ('artifacts/team-dev/' + $RuntimeName)
-$teamImage = 'sogaeding-team-dev:local'
+$teamImage = 'with-human-engine:local'
 $teamHash = [Security.Cryptography.SHA256]::Create()
 try { $teamRootId = ([BitConverter]::ToString($teamHash.ComputeHash([Text.Encoding]::UTF8.GetBytes($teamRoot.ToLowerInvariant())))).Replace('-','').Substring(0,8).ToLowerInvariant() } finally { $teamHash.Dispose() }
 $teamProject = 'sogaeding-team-' + $teamRootId + '-' + $RuntimeName
@@ -51,7 +51,7 @@ try {
         $env:SOGAEDING_INGRESS_SUBNET = $teamNetworkSettings.ingress
     }
     switch ($Mode) {
-        'build' { Invoke-TeamDocker build --target dev -f Dockerfile.dev -t $teamImage . }
+        'build' { Invoke-TeamDocker build --target runtime -f Dockerfile -t $teamImage . }
         'prepare' {
             if (Test-Path -LiteralPath $teamRuntime) { throw 'Existing team runtime preserved. Choose a new RuntimeName.' }
             $teamExisting = @(& docker volume ls --format '{{.Name}}')
@@ -63,29 +63,23 @@ try {
                 --mount "type=bind,source=$teamRoot/tools,target=/tools,readonly" --mount "type=volume,source=$teamVolume,target=/team" `
                 $teamImage python /tools/team_runtime.py prepare /team --name $RuntimeName
             New-Item -ItemType Directory -Path $teamRuntime -Force | Out-Null
-            @{volume=$teamVolume;root_id=$teamRootId;provider='disabled'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $teamRuntime 'prepared.json') -Encoding utf8
+            @{volume=$teamVolume;root_id=$teamRootId;provider='JEV_EXTERNAL_CONFIGURATION_REQUIRED'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $teamRuntime 'prepared.json') -Encoding utf8
         }
         'up' {
-            Invoke-TeamDocker compose -p $teamProject -f compose.team.yaml up -d control upstream gateway
+            Invoke-TeamDocker compose -p $teamProject -f compose.yaml up -d control upstream gateway
         }
-        'check' { Invoke-TeamDocker compose -p $teamProject -f compose.team.yaml run --rm --no-deps check }
+        'check' { Invoke-TeamDocker compose -p $teamProject -f compose.yaml run --rm --no-deps check }
         'test' {
+            Invoke-TeamDocker build --target dev -f Dockerfile -t with-human-dev:local .
+            $teamImage = 'with-human-dev:local'
             Invoke-TeamDocker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --network none --tmpfs /tmp `
                 --mount "type=bind,source=$teamRoot,target=/workspace,readonly" -w /workspace `
                 -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/workspace/src:/workspace/tests/hookgw:/workspace/tools `
                 -e CONTRACT_DIR=/workspace/docs/mvp/contracts $teamImage python -m pytest -q -p no:cacheprovider `
-                tests/hookgw/test_engine.py tests/hookgw/test_jev_policy.py tests/hookgw/test_jev_response_contract.py `
-                tests/hookgw/test_demo_confirm_adapter.py tests/hookgw/test_core_auth_audit.py tests/hookgw/test_team_share.py `
-                tests/hookgw/test_default_candidate_policy.py
+                tests/product
         }
-        'down' { Invoke-TeamDocker compose -p $teamProject -f compose.team.yaml down }
-        'export' {
-            if (-not $ExportPath) { throw '-ExportPath must name a new directory.' }
-            $teamPython = Get-Command python -CommandType Application -ErrorAction SilentlyContinue
-            if (-not $teamPython) { throw 'Export requires Python 3 on PATH; runtime build/check/test use Docker only.' }
-            & $teamPython.Source -X utf8 tools/repository_export.py --root $teamRoot --output $ExportPath
-            if ($LASTEXITCODE -ne 0) { throw 'Source export rejected; inspect its path-only diagnostics.' }
-        }
+        'down' { Invoke-TeamDocker compose -p $teamProject -f compose.yaml --profile dashboard down }
+
     }
 } finally {
     foreach ($teamName in $teamNames) { [Environment]::SetEnvironmentVariable($teamName, $teamPrevious[$teamName], 'Process') }

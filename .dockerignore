@@ -1,5 +1,7 @@
-# Allow only files actually copied into the image. Source is mounted at runtime.
+# Only immutable build inputs enter the image build context.
 **
-!Dockerfile.dev
-!requirements-dev.in
+!Dockerfile
+!requirements.txt
 !requirements-dev.lock
+!tools/
+!tools/minimal_runtime.py

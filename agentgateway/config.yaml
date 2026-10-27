@@ -1,4 +1,4 @@
-# Official v1.6.0, digest is pinned in compose.hookgw.yaml. HTTP proxy preserves MCP JSON-RPC.
+# Gateway version/digest is pinned in compose.yaml; HTTP proxy preserves MCP JSON-RPC.
 config: {}
 binds:
 - port: 8040

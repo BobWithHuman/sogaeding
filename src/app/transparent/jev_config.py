@@ -33,7 +33,7 @@ def load_settings(path):
         raise ValueError("JEV_SETTINGS_INVALID")
     value = strict_json(path.read_bytes())
     required = {"enabled", "model", "request_limit", "input_token_limit", "policy_id"}
-    if not isinstance(value, dict) or set(value) not in (required, required | {"data_policy"}):
+    if not isinstance(value, dict) or not required <= set(value) or set(value)-required-{"data_policy", "unlimited"}:
         raise ValueError("JEV_SETTINGS_INVALID")
     settings = JevSettings(**value, key_path="/jev-key/jev.api-key", budget_path="/jev-budget/typesafe-budget.sqlite3")
     if value["enabled"] is not False and not settings.authorized():

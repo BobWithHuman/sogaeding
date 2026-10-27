@@ -103,7 +103,6 @@ class OpenAIJudge:
                             input=[{"role": "user", "content": canonical(self.request_inputs(snapshot, view))}],
                             tools=[],
                             store=False,
-                            max_output_tokens=2048,
                             reasoning={"effort": "none"},
                             text={
                                 "format": {

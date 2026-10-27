@@ -1,1 +1,0 @@
-"""Authenticated registered MCP tools."""
