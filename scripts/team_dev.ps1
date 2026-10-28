@@ -1,11 +1,12 @@
 param(
-    [ValidateSet('build','prepare','up','check','test','down')]
+    [ValidateSet('build','prepare','up','check','test','down','networks')]
     [string]$Mode = 'check',
     [ValidatePattern('^[a-z0-9][a-z0-9-]{0,47}$')]
     [string]$RuntimeName = 'default',
     [ValidateRange(1024,65535)][int]$ControlPort = 8130,
     [ValidateRange(1024,65535)][int]$GatewayPort = 8140,
-    [string]$ExportPath = ''
+    [string]$ExportPath = '',
+    [switch]$NpmLab
 )
 $ErrorActionPreference = 'Stop'
 $teamRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -32,7 +33,7 @@ try {
     $env:SOGAEDING_RUNTIME_NAME = $RuntimeName
     if ($Mode -eq 'up' -and -not (Test-Path -LiteralPath (Join-Path $teamRuntime 'prepared.json'))) { throw 'Run -Mode prepare with this RuntimeName first.' }
     $teamNetworkFile = Join-Path $teamRuntime 'networks.json'
-    if ($Mode -eq 'up' -and -not (Test-Path -LiteralPath $teamNetworkFile)) {
+    if ($Mode -in @('up','networks') -and -not (Test-Path -LiteralPath $teamNetworkFile)) {
         $teamNetworkIds = @(& docker network ls -q)
         if ($LASTEXITCODE -ne 0) { throw 'Docker network inventory unavailable.' }
         $teamNetworkInventory = '[]'
@@ -59,9 +60,15 @@ try {
             Invoke-TeamDocker volume create --label ('sogaeding.team=' + $teamProject) $teamVolume
             Invoke-TeamDocker run --rm --read-only --user 0:0 --cap-drop ALL --cap-add CHOWN --network none `
                 --mount "type=volume,source=$teamVolume,target=/team" $teamImage python -c "import os; os.chown('/team',10001,10001)"
+            $teamPrepareExtra=@()
+            $teamPrepareMounts=@()
+            if($NpmLab){
+                $teamPrepareExtra=@('--adapter','npm-lab-1')
+                $teamPrepareMounts=@('--mount',"type=bind,source=$teamRoot/demos,target=/demos,readonly")
+            }
             Invoke-TeamDocker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --network none --tmpfs /tmp `
-                --mount "type=bind,source=$teamRoot/tools,target=/tools,readonly" --mount "type=volume,source=$teamVolume,target=/team" `
-                $teamImage python /tools/team_runtime.py prepare /team --name $RuntimeName
+                --mount "type=bind,source=$teamRoot/tools,target=/tools,readonly" @teamPrepareMounts --mount "type=volume,source=$teamVolume,target=/team" `
+                $teamImage python /tools/team_runtime.py prepare /team --name $RuntimeName @teamPrepareExtra
             New-Item -ItemType Directory -Path $teamRuntime -Force | Out-Null
             @{volume=$teamVolume;root_id=$teamRootId;provider='JEV_EXTERNAL_CONFIGURATION_REQUIRED'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $teamRuntime 'prepared.json') -Encoding utf8
         }

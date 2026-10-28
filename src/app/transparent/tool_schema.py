@@ -50,6 +50,9 @@ def parse(candidate, workspace):
     """No guessed shell slots. All returned values came from a supported grammar."""
     tool, args, route = candidate["tool"], candidate["args"], candidate["route"]
     if route == "mcp":
+        from app.transparent.npm_lab import NPM_TOOLS, parse_npm
+        if tool in {t['name'] for t in NPM_TOOLS}:
+            return parse_npm(tool, args)
         schema = next((t["inputSchema"] for t in FILE_TOOLS if t["name"] == tool), None)
         if schema is None or not Draft202012Validator(schema).is_valid(args):
             raise ValueError("INVALID_TOOL_SCHEMA")

@@ -159,6 +159,9 @@ def typed_observations(answers, questions, mapping):
 
 def configuration_risk(parsed):
     """Actual configuration assignments, not mention of a dangerous string."""
+    if parsed.get('parser') == 'npm-lab-1' and parsed['action'] == 'WRITE' and parsed['targets'] == ['.npmrc']:
+        from app.transparent.npm_lab import npmrc_risk
+        return npmrc_risk(parsed['payload'])
     if parsed["action"] != "WRITE" or not any(p.rsplit("/", 1)[-1].casefold() in ("settings.json", "config.json", "package.json") for p in parsed["targets"]):
         return None
     payload = parsed["payload"]

@@ -585,14 +585,17 @@ class Engine:
         if (digest(text) != row["hash"] or row["hash"] != context.get("action_hash") or digest(request) != context.get("request_hash")
                 or len(request.encode()) > 16384 or not self.safe_input(text)
                 or any(x.casefold() in text.casefold() for x in self.grant.get("protected_markers", []))
-                or candidate.get("route") != "mcp" or candidate.get("tool") != "read_file"
+                or candidate.get("route") != "mcp"
+                or not (candidate.get('tool') == 'read_file' or self.grant.get('adapter') == 'npm-lab-1'
+                        and candidate.get('tool') in ('read_project_file', 'read_github_issue'))
                 or candidate["tool"] not in self.grant["tools"].get("mcp", [])
                 or not self.complete_sources(sources)
                 or db.execute("SELECT 1 FROM analysis_stops WHERE session_hash=? AND turn_hash=?", (digest(row["session"]), digest(row["turn"]))).fetchone()):
             raise Rejected("FORWARD_SNAPSHOT_STALE")
         try:
             parsed = parse(candidate, self.grant["workspace"])
-            if parsed["action"] != "READ" or parsed["parser"] != "enrolled-files-1":
+            expected_parser = 'npm-lab-1' if candidate['tool'] in ('read_project_file', 'read_github_issue') else 'enrolled-files-1'
+            if parsed["action"] != "READ" or parsed["parser"] != expected_parser:
                 raise ValueError()
             # Re-run complete exact source/catalog validity, not just source IDs.
             snapshot = {"analysis_id": "public-read-recheck", "user_request": request,
@@ -817,7 +820,7 @@ class Engine:
                     events.append({"source_id":source["source_id"],"call_id":source["call_id"],
                                    "turn_index":turn_ids.index(source_call["turn"]),"route":source_call["path"],
                                    "tool":body["tool"],"target":body["args"].get("path"),
-                                   "result_role":"WRITE_COMPLETION" if body["tool"]=="write_file" else "READ_RESULT" if body["tool"]=="read_file" else "OTHER_RESULT"})
+                                   "result_role":"WRITE_COMPLETION" if body["tool"] in ('write_file', 'edit_project_file') else "READ_RESULT" if body["tool"] in ('read_file', 'read_project_file', 'read_github_issue') else "OTHER_RESULT"})
                 observation_context = {"current_turn":turn_ids.index(row["turn"]),"actual_turns":conversation,"source_events":events}
             if demo_connection is not None:
                 current = self._demo_intent_context(db, machine, row["session"], row["turn"], demo_connection)

@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 
-def generate(target: Path, extra_servers=()):
+def generate(target: Path, extra_servers=(), extra_clients=()):
     target.mkdir(parents=True, exist_ok=False, mode=0o700)
     now = datetime.now(UTC)
     ca_key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
@@ -32,7 +32,7 @@ def generate(target: Path, extra_servers=()):
         ("gateway-client", [], True, False),
         ("wrong-host", ["wrong.invalid"], False, False),
         ("expired", ["127.0.0.1"], False, True),
-    ] + [(label, hosts, False, False) for label, hosts in extra_servers]:
+    ] + [(label, hosts, False, False) for label, hosts in extra_servers] + [(label, [], True, False) for label in extra_clients]:
         key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
         subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, label)])
         cert = (x509.CertificateBuilder().subject_name(subject).issuer_name(ca.subject)

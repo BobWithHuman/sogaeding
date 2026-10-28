@@ -30,7 +30,7 @@ AI 에이전트는 파일이나 외부 자료를 읽고 도구를 실행합니�
 | 대시보드 | 실제 엔진의 상태·판정 이력·통계·보안 현황 조회 |
 | Claude Code / DTAP | 별도 평가 코드·기록 보존. 제품의 대화형 Claude Code ASK 지원을 뜻하지 않음 |
 
-현재 연결은 Codex의 모든 내장 도구나 사용자 PC 전체 파일을 자동으로 보호하는 방식이 아닙니다. 제공한 연결기로 연 Codex에서 등록된 `with_human` 파일 도구를 사용합니다. 회사 서버에서 여러 사용자를 운영하는 서비스도 현재 제품 범위가 아닙니다.
+현재 연결은 Codex의 모든 내장 도구나 사용자 PC 전체 파일을 자동으로 보호하는 방식이 아닙니다. 연결기로 연 Codex에 작업영역을 안내하고 기본 셸 도구는 이 실행에서 숨깁니다. 다른 개인/자동 등록 MCP도 이 실행에서 비활성화하고 실제 활성 목록이 `with_human` 하나인지 검사합니다. 개인 설정 파일은 유지합니다. 사용자는 프롬프트에 도구 이름 없이 파일 작업을 요청할 수 있습니다. 미등록 native 도구의 Hook 차단은 유지합니다. 회사 서버에서 여러 사용자를 운영하는 서비스도 현재 제품 범위가 아닙니다.
 
 ## 어떻게 구현했나요?
 
@@ -167,7 +167,7 @@ Mac용 진입점은 동일 Dockerfile·compose.yaml·Hook·MCP 연결기를 재�
 OS별 `start`로 연 Codex에서 다음처럼 요청합니다. 연결기는 포함되어 있으므로 새로 구현할 필요가 없습니다. 필요한 Hook 신뢰 검토는 사용자가 Codex 화면에서 진행합니다.
 
 ```text
-with_human MCP로 docs/release.md를 읽고, 내용을 한 줄로 요약해서 reports/trial.md에 저장해줘.
+docs/release.md를 읽고, 내용을 한 줄로 요약해서 reports/trial.md에 저장해줘.
 ```
 
 `docs/release.md`는 prepare가 만드는 합성 배포 문서입니다. 읽기·쓰기 대상은 사용자 PC의 저장소 파일이 아니라 **제품 Docker 작업영역 `/files`**에 있습니다. 실행 후 대시보드의 판정 이력·실행 결과·통계를 확인합니다.
@@ -175,7 +175,7 @@ with_human MCP로 docs/release.md를 읽고, 내용을 한 줄로 요약해서 r
 ASK 흐름을 시험하려면 다음처럼 요청합니다.
 
 ```text
-with_human MCP로 docs/release.md를 읽고, 내용을 한 줄로 요약해서 reports/ask-demo.md에 저장해줘.
+docs/release.md를 읽고, 내용을 한 줄로 요약해서 reports/ask-demo.md에 저장해줘.
 사용자 확인이 필요하면 엔진이 알려준 이유를 설명하고 질문해줘.
 ```
 
@@ -276,6 +276,8 @@ docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
 ```
 
 ## 검증 범위와 평가 자료
+
+Issue의 위험한 TLS 우회 권고와 정상 npm 설치 오류를 사용하는 선택적 Windows 시연은 [npm TLS 시연 안내](demos/npm-tls/README.md)를 참고하세요. 이 프로필은 기본 파일 도구 연결과 분리해서 준비하며, 별도 YAML을 추가하지 않습니다.
 
 - **Windows**: 새 clone·새 자격·새 volume으로 빌드/준비/기동, 실제 MCP 읽기·보호 쓰기 거부·대시보드 집계를 확인했습니다. 별도 기존 runtime에서 실제 Codex·Jev·사용자 답변의 ASK→재판정 ALLOW→쓰기 OBSERVED를 확인했습니다.
 - **2026-10-28 새 clone**: 제품/POSIX 시험 **213개 통과·5개 skip**. skip은 제거한 과거 control 모듈 검사2개와 별도 TLS 통합 서비스용3개입니다. 무모델 시험을 모델 정확도로 표현하지 않습니다.

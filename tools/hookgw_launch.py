@@ -86,10 +86,15 @@ def api_overrides(model):
             "-c", "model_providers." + API_PROVIDER + "=" + provider]
 
 
-def overrides(root, host, python):
+def overrides(root, host, python, *, mcp_only=False):
     windows_command = f'"{python}" -I "{root / "tools/hookgw_hook.py"}" "{host}"'
     command = windows_command if os.name == "nt" else shlex.join([str(python), "-I", str(root / "tools/hookgw_hook.py"), str(host)])
     values = ["-c", "features.hooks=true"]
+    if mcp_only:
+        # Product files live in Docker; the host shell cannot access them.
+        # Hide that unsupported route for this child only. Hooks still reject
+        # every other unenrolled native tool; sandbox/approval remain intact.
+        values += ["-c", "features.shell_tool=false"]
     for event in ("UserPromptSubmit", "PreToolUse", "PostToolUse"):
         handler = "{type=\"command\",command=" + json.dumps(command) + ",command_windows=" + json.dumps("& " + windows_command) + ",timeout=120}"
         values += ["-c", "hooks." + event + "=[{hooks=[" + handler + "]}]"]

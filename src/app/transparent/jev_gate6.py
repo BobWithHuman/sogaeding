@@ -15,7 +15,9 @@ CONSENT_REASONS = frozenset((*RISK_HOLDS, "PROTECTED_USER_PATH_REQUIRES_CONSENT"
 
 def file_authority(snapshot, parsed):
     grant, candidate = snapshot["server_grant"], snapshot["candidate"]
-    enrolled = (candidate["route"] == "mcp" and parsed["parser"] == "enrolled-files-1"
+    parser_enrolled = (parsed['parser'] == 'enrolled-files-1'
+                       or parsed['parser'] == 'npm-lab-1' and grant.get('adapter') == 'npm-lab-1')
+    enrolled = (candidate["route"] == "mcp" and parser_enrolled
                 and candidate["tool"] in grant.get("tools", {}).get("mcp", []))
     rules = grant.get("gate6_resource_rules", {})
     if not isinstance(rules, dict):
@@ -51,7 +53,7 @@ class JevPolicyGate6(JevPolicyCurrent):
             parsed = self.parse_candidate(snapshot)
         except (ValueError, TypeError, KeyError):
             parsed = None
-        if parsed and parsed["parser"] == "enrolled-files-1":
+        if parsed and parsed["parser"] in ("enrolled-files-1", "npm-lab-1"):
             if not file_authority(snapshot, parsed)["authorized"]:
                 raise AnalysisFailure("INVALID_SCHEMA")
         decision, reasons, trace, checks = await super().evaluate(snapshot)

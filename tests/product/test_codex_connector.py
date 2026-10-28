@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import hookgw_hook as hook
+import hookgw_mcp as bridge
 import product_codex as connector
 import pytest
 
@@ -40,6 +41,28 @@ def test_private_windows_writer_bundle_excludes_server_secrets(tmp_path):
     assert set(bundle)==set(connector.ROLE_FILES)
     assert base64.b64decode(bundle["machine.token"])==b"synthetic-machine.token"
     assert "do-not-export" not in json.dumps(bundle)
+
+
+@pytest.mark.parametrize('adapter,tools',[(None,['read_file','write_file']),
+    ('npm-lab-1',['read_github_issue','read_project_file','edit_project_file','run_npm_install'])])
+def test_reattach_bundle_uses_existing_enrollment_without_server_keys(tmp_path,adapter,tools):
+    host_profile(tmp_path)
+    (tmp_path/'runtime/control').mkdir()
+    (tmp_path/'runtime/control/grant.json').write_text(json.dumps({
+        'adapter':adapter, 'workspace':'/files', 'tools':{'mcp':tools}}))
+    bundle=connector.export_bundle(tmp_path/'runtime',include_metadata=True)
+    assert bundle['format']=='product-connector-bundle-1' and bundle['adapter']==adapter
+    assert set(bundle['roles'])==set(connector.ROLE_FILES)
+    assert 'do-not-export' not in json.dumps(bundle)
+
+
+def test_reattach_refuses_unknown_runtime_tool_enrollment(tmp_path):
+    host_profile(tmp_path)
+    (tmp_path/'runtime/control').mkdir()
+    (tmp_path/'runtime/control/grant.json').write_text(json.dumps({
+        'workspace':'/files', 'tools':{'mcp':['arbitrary_shell']}}))
+    with pytest.raises(ValueError,match='SUPPORTED_PRODUCT_GRANT_REQUIRED'):
+        connector.export_bundle(tmp_path/'runtime',include_metadata=True)
 
 
 @pytest.mark.parametrize('transient',[ConnectionRefusedError(),ssl.SSLEOFError()])
@@ -123,10 +146,12 @@ def test_start_uses_existing_login_and_model_and_disconnects_after_cli(tmp_path,
         return {"state":"CLOSED"}
     monkeypatch.setattr(connector,"send",send)
     monkeypatch.setattr(connector.launcher,"check_conflicts",lambda root,args,**kwargs:None)
+    monkeypatch.setattr(connector,'product_overrides',lambda root,host,exe:connector.launcher.overrides(root,host,'python',mcp_only=True))
     def run(argv,**kwargs):
         assert kwargs["env"]["WITH_HUMAN_CONNECTION"]=="synthetic-only"
         assert not any("model=" in item or "model_provider=" in item or "approval_policy=" in item or "sandbox=" in item for item in argv)
         assert any("hookgw_hook.py" in item for item in argv) and any("hookgw_mcp.py" in item for item in argv)
+        assert "features.shell_tool=false" in argv
         return SimpleNamespace(returncode=17)
     monkeypatch.setattr(connector.subprocess,"run",run)
     assert connector.start(Path(__file__).resolve().parents[2],host,executable)==17
@@ -153,11 +178,102 @@ def test_cli_configuration_check_never_connects_or_starts_a_model(tmp_path,monke
     monkeypatch.chdir(workspace)
     monkeypatch.setattr(connector,"send",lambda *args,**kwargs:pytest.fail("No engine session in CLI check"))
     monkeypatch.setattr(connector.launcher,"check_conflicts",lambda *args,**kwargs:None)
+    monkeypatch.setattr(connector,'product_overrides',lambda root,host,exe:connector.launcher.overrides(root,host,'python',mcp_only=True))
     def run(argv,**kwargs):
         assert argv[-2:]==["features","list"] and kwargs["timeout"]==30
-        return SimpleNamespace(returncode=0,stdout="hooks experimental true\n")
+        assert "features.shell_tool=false" in argv
+        return SimpleNamespace(returncode=0,stdout="hooks stable true\nshell_tool stable false\n")
     monkeypatch.setattr(connector.subprocess,"run",run)
     assert connector.cli_check(tmp_path,host,executable)["interactive_session"]=="NOT_STARTED"
+
+
+def test_cli_check_rejects_native_shell_still_enabled(tmp_path,monkeypatch):
+    workspace,host=host_profile(tmp_path)
+    executable=tmp_path/'codex'
+    executable.write_bytes(b'synthetic')
+    monkeypatch.chdir(workspace)
+    monkeypatch.setattr(connector.launcher,'check_conflicts',lambda *a,**kw:None)
+    monkeypatch.setattr(connector,'product_overrides',lambda root,host,exe:connector.launcher.overrides(root,host,'python',mcp_only=True))
+    monkeypatch.setattr(connector.subprocess,'run',lambda *a,**kw:SimpleNamespace(
+        returncode=0,stdout='hooks stable true\nshell_tool stable true\n'))
+    with pytest.raises(ValueError,match='CODEX_HOOK_CONFIGURATION_UNAVAILABLE'):
+        connector.cli_check(workspace,host,executable)
+
+
+def test_file_workspace_metadata_preserves_schema_and_never_supplies_decision():
+    schema={'type':'object','required':['path'],'additionalProperties':False}
+    result={'tools':[{'name':'read_file','description':'old','inputSchema':schema},
+                     {'name':'write_file','description':'old','inputSchema':schema},
+                     {'name':'other','description':'unchanged','inputSchema':schema}]}
+    bridge.product_metadata('tools/list',result)
+    assert all(t['inputSchema']==schema for t in result['tools'])
+    assert 'connected Docker file workspace' in result['tools'][0]['description']
+    assert result['tools'][2]['description']=='unchanged'
+    instructions=bridge.product_metadata('initialize',{})['instructions']
+    assert 'not the host repository' in instructions and 'native user form' in instructions
+    assert 'reason_details' in instructions and 'cannot grant consent' in instructions
+    assert not any(s in instructions for s in ('release.md','release-normal.md','ask-demo.md','.env','SECURITY_REVIEW_REQUIRED'))
+
+
+def test_shell_visibility_override_is_scoped_to_product_not_other_launchers(tmp_path):
+    common=connector.launcher.overrides(tmp_path,tmp_path/'host','python')
+    product=connector.launcher.overrides(tmp_path,tmp_path/'host','python',mcp_only=True)
+    assert 'features.shell_tool=false' not in common
+    assert 'features.shell_tool=false' in product
+    assert not any('approval_policy=' in s or 'sandbox=' in s or 'model=' in s for s in product)
+
+
+def test_product_mcp_catalog_disables_personal_and_auto_registered_servers_without_secrets(tmp_path,monkeypatch):
+    executable=tmp_path/'codex'
+    executable.write_bytes(b'synthetic')
+    node=tmp_path/'node'
+    node.write_bytes(b'synthetic')
+    probes=[]
+    def run(argv,**kwargs):
+        assert argv[-3:]==['mcp','list','--json'] and kwargs['encoding']=='utf-8'
+        probes.append(argv)
+        assert 'PRIVATE_ENV_VALUE' not in str(argv) and 'PRIVATE_ARG_VALUE' not in str(argv)
+        others_disabled='mcp_servers.bob-agentgateway.enabled=false' in argv
+        if others_disabled and 'mcp_servers.cua_repl.command='+json.dumps(str(node)) not in argv:
+            return SimpleNamespace(returncode=1,stdout='')
+        return SimpleNamespace(returncode=0,stdout=json.dumps([
+            {'name':'with_human','enabled':True,'transport':{'type':'stdio','command':str(node)}},
+            {'name':'bob-agentgateway','enabled':not others_disabled,
+             'transport':{'type':'streamable_http','url':'http://localhost:4400/mcp','http_headers':{'Authorization':'PRIVATE_ENV_VALUE'}}},
+            {'name':'cua_repl','enabled':not others_disabled,
+             'transport':{'type':'stdio','command':str(node),'args':['PRIVATE_ARG_VALUE'],'env':{'KEY':'PRIVATE_ENV_VALUE'}}}]))
+    monkeypatch.setattr(connector.subprocess,'run',run)
+    flags=connector.product_overrides(tmp_path,tmp_path/'host',executable)
+    assert len(probes)==3 and 'mcp_servers.cua_repl.enabled=false' in flags
+    assert 'mcp_servers.cua_repl.command='+json.dumps(str(node)) in flags
+    assert not any('http://localhost:4400' in s for s in flags)
+
+
+@pytest.mark.parametrize('kind',['missing_product','forced_server','malformed'])
+def test_product_mcp_catalog_fails_closed_on_unverified_configuration(tmp_path,monkeypatch,kind):
+    def run(argv,**kwargs):
+        values=[{'name':'with_human','enabled':True}]
+        if kind=='missing_product':
+            values=[]
+        if kind=='forced_server':
+            values.append({'name':'unbound','enabled':True,'transport':{'type':'streamable_http','url':'http://localhost:4400/mcp'}})
+        return SimpleNamespace(returncode=0,stdout='{}' if kind=='malformed' else json.dumps(values))
+    monkeypatch.setattr(connector.subprocess,'run',run)
+    with pytest.raises(ValueError):
+        connector.product_overrides(tmp_path,tmp_path/'host',tmp_path/'codex')
+
+
+def test_product_disables_configured_remote_mcp_without_copying_its_private_url(tmp_path,monkeypatch):
+    def run(argv,**kwargs):
+        assert 'PRIVATE_VALUE' not in str(argv)
+        return SimpleNamespace(returncode=0,stdout=json.dumps([
+            {'name':'with_human','enabled':True},
+            {'name':'other','enabled':'mcp_servers.other.enabled=false' not in argv,
+             'transport':{'type':'streamable_http','url':'https://example.invalid/mcp?token=PRIVATE_VALUE'}}]))
+    monkeypatch.setattr(connector.subprocess,'run',run)
+    flags=connector.product_overrides(tmp_path,tmp_path/'host',tmp_path/'codex')
+    assert 'mcp_servers.other.enabled=false' in flags
+    assert 'PRIVATE_VALUE' not in str(flags)
 
 
 @pytest.mark.parametrize("stage",["READY","EXECUTING","ASK","PRESENTED"])

@@ -23,10 +23,10 @@ from app.transparent.file_errors import missing_read_result
 from app.transparent.tool_schema import FILE_TOOLS
 
 
-def open_file(root, name, write=False):
+def open_file(root, name, write=False, *, allowed_hidden=(), update=False):
     p = PurePosixPath(name)
     if not isinstance(name, str) or not name or "\\" in name or p.is_absolute() or any(
-        x in ("", ".", "..") or x.startswith(".") or x in ("artifacts", "references") for x in name.split("/")
+        x in ("", ".", "..") or x.startswith(".") and name not in allowed_hidden or x in ("artifacts", "references") for x in name.split("/")
     ) or ":" in name or name.casefold() in ("agents.md", "harness/build_tasks.json") or name.casefold().startswith("docs/plans/"):
         raise ValueError("PATH_SCOPE")
     lowered = name.casefold()
@@ -42,20 +42,21 @@ def open_file(root, name, write=False):
             child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
             os.close(directory)
             directory = child
-        flags = os.O_WRONLY | os.O_CREAT if write else os.O_RDONLY
+        flags = (os.O_RDWR if update else os.O_WRONLY | os.O_CREAT) if write else os.O_RDONLY
         fd = os.open(p.name, flags | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600, dir_fd=directory)
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             os.close(fd)
             raise ValueError("REGULAR_UNLINKED_FILE_REQUIRED")
-        if write:
+        if write and not update:
             os.ftruncate(fd, 0)
         return fd
     finally:
         os.close(directory)
 
 
-def create_app(root, ledger, forward_key):
+def create_app(root, ledger, forward_key, *, tool_catalog=None, execute=None):
+    catalog = FILE_TOOLS if tool_catalog is None else tool_catalog
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.state.auth_audit = AuthAudit(str(ledger) + ".auth")
     with sqlite3.connect(ledger) as db:
@@ -80,7 +81,7 @@ def create_app(root, ledger, forward_key):
             elif method == "ping":
                 result = {}
             elif method == "tools/list":
-                result = {"tools": FILE_TOOLS}
+                result = {"tools": catalog}
             elif method == "tools/call":
                 auth_pending = True
                 proof, sig = request.headers.get("x-with-human-forward", "").rsplit(".", 1)
@@ -93,6 +94,17 @@ def create_app(root, ledger, forward_key):
                 auth_pending = False
                 params = value["params"]
                 tool, args = params["name"], params["arguments"]
+                if execute is not None:
+                    from jsonschema import Draft202012Validator
+                    schema = next((t['inputSchema'] for t in catalog if t['name'] == tool), None)
+                    if schema is None or not Draft202012Validator(schema).is_valid(args):
+                        raise ValueError('INVALID_TOOL')
+                    with sqlite3.connect(ledger, timeout=3) as db:
+                        db.execute('INSERT INTO attempts VALUES(?,?,?,?)', (claim['call'], claim['hash'], 'UNKNOWN', time.time()))
+                    result = await execute(tool, args)
+                    with sqlite3.connect(ledger) as db:
+                        db.execute("UPDATE attempts SET state='OBSERVED' WHERE call=?", (claim['call'],))
+                    return JSONResponse({'jsonrpc': '2.0', 'id': rid, 'result': result})
                 required = {"path", "content"} if tool == "write_file" else {"path"}
                 if tool not in ("read_file", "write_file") or set(args) != required or not isinstance(args["path"], str):
                     raise ValueError("INVALID_TOOL")

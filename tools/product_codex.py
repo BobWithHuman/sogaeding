@@ -32,7 +32,7 @@ POLICY = "engine-2026-10-24-gate6-1"
 ROLE_FILES = ("ca.pem", "machine.id", "machine.token", "human.token")
 
 
-def export_bundle(runtime):
+def export_bundle(runtime, *, include_metadata=False):
     """Local pipe to the Windows ACL-controlled writer; never use as a log."""
     source = runtime / "host"
     if source.is_symlink() or any(not (source / name).is_file() or (source / name).is_symlink() for name in ROLE_FILES):
@@ -40,7 +40,16 @@ def export_bundle(runtime):
     values = {name: (source / name).read_bytes() for name in ROLE_FILES}
     if any(not 1 <= len(value) <= 8192 for value in values.values()):
         raise ValueError("HOST_CREDENTIALS_UNAVAILABLE")
-    return {name: base64.b64encode(value).decode("ascii") for name, value in values.items()}
+    roles = {name: base64.b64encode(value).decode("ascii") for name, value in values.items()}
+    if not include_metadata:
+        return roles
+    grant = json.loads((runtime / 'control/grant.json').read_text(encoding='utf-8'))
+    adapter = grant.get('adapter')
+    expected = ['edit_project_file', 'read_github_issue', 'read_project_file', 'run_npm_install'] if adapter == 'npm-lab-1' else ['read_file', 'write_file']
+    if (adapter not in (None, 'npm-lab-1') or grant.get('workspace') != '/files'
+            or sorted(grant.get('tools', {}).get('mcp', [])) != expected):
+        raise ValueError('SUPPORTED_PRODUCT_GRANT_REQUIRED')
+    return {'format': 'product-connector-bundle-1', 'roles': roles, 'adapter': adapter}
 
 
 def export_host(runtime, destination, workspace, control_port, gateway_port):
@@ -83,7 +92,7 @@ def profile_for(host):
 
 
 def check(host):
-    profile_for(host)
+    profile = profile_for(host)
     deadline = time.monotonic() + 15
     while True:
         try:
@@ -99,12 +108,58 @@ def check(host):
     if health.get("decision_policy") != POLICY or health.get("judge_mode") != "JEV_USER_LIVE":
         raise ValueError("CURRENT_LIVE_GATE6_REQUIRED")
     return {"state": "READY", "policy": POLICY, "mode": health["judge_mode"], "model_requests": 0,
-            "provider_authentication": "NOT_TESTED", "scope": "REGISTERED_FILE_MCP"}
+            "provider_authentication": "NOT_TESTED", "scope": "REGISTERED_NPM_LAB_MCP" if profile.get('toolset') == 'npm-lab-1' else "REGISTERED_FILE_MCP"}
 
 
 def history(host):
     profile_for(host)
     return send(host, "/history/summary", None, human=True, method="GET")
+
+
+def product_overrides(project, host, executable):
+    """Expose only enrolled product MCP tools in this child, not personal MCPs."""
+    flags = launcher.overrides(project, host, sys.executable, mcp_only=True)
+
+    def catalog(current):
+        result = subprocess.run([str(executable), *current, "mcp", "list", "--json"],
+                                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                timeout=30, check=False)
+        if result.returncode:
+            raise ValueError("CODEX_MCP_BOOTSTRAP_UNAVAILABLE")
+        values = json.loads(result.stdout)
+        if (not isinstance(values, list) or len(values) > 128
+                or any(not isinstance(v, dict) or not isinstance(v.get('name'), str)
+                       or type(v.get('enabled')) is not bool for v in values)):
+            raise ValueError("CODEX_MCP_CONFIGURATION_UNAVAILABLE")
+        if {v['name'] for v in values if v['enabled'] and v['name'] == 'with_human'} != {'with_human'}:
+            raise ValueError("PRODUCT_MCP_NOT_ENABLED")
+        return values
+
+    others = [s for s in catalog(flags) if s['enabled'] and s['name'] != 'with_human']
+    for server in others:
+        name = server['name']
+        if not re.fullmatch(r'[A-Za-z0-9_-]+', name):
+            raise ValueError("MCP_SERVER_NAME_REQUIRES_REVIEW")
+        flags += ['-c', 'mcp_servers.' + name + '.enabled=false']
+    try:
+        effective = catalog(flags)
+    except ValueError as error:
+        if str(error) != 'CODEX_MCP_BOOTSTRAP_UNAVAILABLE':
+            raise
+        # Auto-registered stdio servers need a transport even when disabled.
+        # Copy executable paths only: never copy args, env, URLs or auth values
+        # into the child command line. Configured HTTP transports stay in place.
+        for server in others:
+            transport = server.get('transport', {})
+            if transport.get('type') == 'stdio':
+                command = transport.get('command')
+                if not isinstance(command, str) or not Path(command).is_file():
+                    raise ValueError('MCP_TRANSPORT_REQUIRES_REVIEW') from None
+                flags += ['-c', 'mcp_servers.' + server['name'] + '.command=' + json.dumps(command)]
+        effective = catalog(flags)
+    if {v['name'] for v in effective if v['enabled']} != {'with_human'}:
+        raise ValueError("UNENROLLED_MCP_STILL_ENABLED")
+    return flags
 
 
 def start(project, host, executable):
@@ -115,13 +170,16 @@ def start(project, host, executable):
     if not executable.is_file() or executable.resolve().is_relative_to(workspace):
         raise ValueError("INSTALLED_CODEX_EXECUTABLE_REQUIRED")
     launcher.check_conflicts(workspace, [], strict_product=True)
+    flags = product_overrides(project, host, executable)
     check(host)
     connection = send(host, "/connect", {})["connection"]
     try:
         # Keep user's login, model, sandbox and approval settings. No prompt injected.
-        print("With Human: gate-6 / registered file MCP. Review /hooks when prompted.", flush=True)
-        print("Use with_human read_file/write_file; its files are in the product Docker workspace.", flush=True)
-        result = subprocess.run([str(executable), *launcher.overrides(project, host, sys.executable)],
+        scope = 'npm project MCP' if profile.get('toolset') == 'npm-lab-1' else 'registered file MCP'
+        print(f"With Human: gate-6 / {scope}. Review /hooks when prompted.", flush=True)
+        print("Connected workspace ready. Describe tasks normally; project files are in Docker.", flush=True)
+        print("Only the enrolled product MCP is enabled in this session; personal MCP settings are preserved.", flush=True)
+        result = subprocess.run([str(executable), *flags],
                                 env={**os.environ, "WITH_HUMAN_CONNECTION": connection}, check=False)
         return result.returncode
     finally:
@@ -140,11 +198,14 @@ def cli_check(project, host, executable):
     if not executable.is_file() or executable.resolve().is_relative_to(workspace):
         raise ValueError("INSTALLED_CODEX_EXECUTABLE_REQUIRED")
     launcher.check_conflicts(workspace, [], strict_product=True)
-    result = subprocess.run([str(executable), *launcher.overrides(project, host, sys.executable), "features", "list"],
-                            capture_output=True, text=True, timeout=30, check=False)
-    if result.returncode or not re.search(r"(?m)^hooks\s+\S+\s+true\s*$", result.stdout):
+    flags = product_overrides(project, host, executable)
+    result = subprocess.run([str(executable), *flags, "features", "list"],
+                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False)
+    if (result.returncode or not re.search(r"(?m)^hooks\s+\S+\s+true\s*$", result.stdout)
+            or not re.search(r"(?m)^shell_tool\s+\S+\s+false\s*$", result.stdout)):
         raise ValueError("CODEX_HOOK_CONFIGURATION_UNAVAILABLE")
-    return {"state": "CLI_CONFIGURATION_ACCEPTED", "model_requests": 0, "interactive_session": "NOT_STARTED"}
+    return {"state": "CLI_CONFIGURATION_ACCEPTED", "model_requests": 0, "interactive_session": "NOT_STARTED",
+            "enabled_mcp_servers": ["with_human"], "native_shell": "DISABLED_FOR_PRODUCT_SESSION"}
 
 
 def main():
@@ -156,11 +217,12 @@ def main():
     parser.add_argument("--control-port", type=int, default=8130)
     parser.add_argument("--gateway-port", type=int, default=8140)
     parser.add_argument("--exe", type=Path)
+    parser.add_argument('--include-metadata', action='store_true')
     args = parser.parse_args()
     if args.mode == "export-bundle":
         if args.runtime is None:
             parser.error("export-bundle requires --runtime")
-        print(json.dumps(export_bundle(args.runtime)))
+        print(json.dumps(export_bundle(args.runtime, include_metadata=args.include_metadata)))
         return
     if args.host is None:
         parser.error("--host required")

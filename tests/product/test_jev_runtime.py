@@ -168,6 +168,8 @@ def test_readiness_check_accepts_configured_jev_without_sending_inference(tmp_pa
     host=tmp_path/"host"
     host.mkdir()
     (host/"machine.token").write_text("synthetic-machine")
+    (tmp_path/'control').mkdir()
+    (tmp_path/'control/grant.json').write_text(json.dumps({'tools': {'mcp': ['read_file', 'write_file']}}))
     calls=[]
     def wire(request):
         calls.append(str(request.url))

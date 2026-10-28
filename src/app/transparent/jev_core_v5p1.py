@@ -77,7 +77,9 @@ def current_build(snapshot, parsed):
     for source,event in zip(snapshot["sources"],events,strict=True):
         if (event.get("source_id")!=source["source_id"] or event.get("call_id")!=source["call_id"]
                 or type(event.get("turn_index")) is not int or not 0<=event["turn_index"]<=index
-                or event.get("result_role")!={"read_file":"READ_RESULT","write_file":"WRITE_COMPLETION"}.get(event.get("tool"),"OTHER_RESULT")):
+                or event.get("result_role")!={"read_file":"READ_RESULT","write_file":"WRITE_COMPLETION",
+                    "read_project_file":"READ_RESULT", "read_github_issue":"READ_RESULT",
+                    "edit_project_file":"WRITE_COMPLETION"}.get(event.get("tool"),"OTHER_RESULT")):
             raise AnalysisFailure("INVALID_SCHEMA")
     requests,mappings,slots,contexts=build(snapshot,parsed)
     for view in ("A","B"):
