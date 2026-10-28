@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import subprocess
 import tomllib
 from pathlib import Path
@@ -86,10 +87,11 @@ def api_overrides(model):
 
 
 def overrides(root, host, python):
-    command = f'"{python}" -I "{root / "tools/hookgw_hook.py"}" "{host}"'
+    windows_command = f'"{python}" -I "{root / "tools/hookgw_hook.py"}" "{host}"'
+    command = windows_command if os.name == "nt" else shlex.join([str(python), "-I", str(root / "tools/hookgw_hook.py"), str(host)])
     values = ["-c", "features.hooks=true"]
     for event in ("UserPromptSubmit", "PreToolUse", "PostToolUse"):
-        handler = "{type=\"command\",command=" + json.dumps(command) + ",command_windows=" + json.dumps("& " + command) + ",timeout=120}"
+        handler = "{type=\"command\",command=" + json.dumps(command) + ",command_windows=" + json.dumps("& " + windows_command) + ",timeout=120}"
         values += ["-c", "hooks." + event + "=[{hooks=[" + handler + "]}]"]
     values += ["-c", "mcp_servers.with_human.command=" + json.dumps(python),
                "-c", "mcp_servers.with_human.args=" + json.dumps(["-I", str(root / "tools/hookgw_mcp.py"), str(host)]),

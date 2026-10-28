@@ -287,6 +287,21 @@ cd C:\sogaeding
 
 다른 PC에는 이 PC의 키·토큰·DB·volume을 보내지 않는다. 해당 PC에서 키 경로를 제공하고 새 runtime을 prepare한다. Windows DACL, 로컬 CA, 역할별 TLS가 필요하다. 현재 스크립트는 저장소의 단일 Dockerfile로 `with-human-engine:local`을 빌드한다. prepare가 빌드를 호출하므로 다른 개발자 PC의 이미지를 복사하지 않는다. requirements.txt는 실행 의존성의 버전/hash를 고정하고, tools/minimal_runtime.py가 실제 native library와 패키지 목록을 포함한 최소 이미지를 만든다. 제품 Compose는 compose.yaml 하나다. 선택적 시험은 같은 Dockerfile의 dev target을 사용한다. 새 clone·새 volume·새 자격으로 준비/기동/연결기/대시보드 재현을 확인했다. 같은 Windows PC의 격리 환경 검증이며 실제 다른 물리 PC/다른 OS 검증은 아니다.
 
+### macOS 실행 진입점 · 2026-10-28
+
+Mac에서는 Windows 전용 PowerShell/DACL 준비기를 쓰지 않고 `python3 tools/product_local.py`를 사용한다. 상세 명령은 루트 README의 macOS 절을 따른다. 동일 Dockerfile·Compose·Gate-6·DB·조회 API·Hook·MCP 코드를 재사용하며 엔진 판정이나 인증 계약을 새로 만들지 않는다.
+
+- prepare: 새 runtime/volume만 생성하고 PKI·grant·역할별 자격을 기존 team_runtime.py로 준비한다. 외부 Jev 키 파일은 현재 uid·0600을 검사한다. Mac의 bind mount uid 차이 때문에 키/정책을 stdin으로 새 volume의 control-provider에 배타적으로 복사하고 디렉터리0700·파일0600·UID 10001로 보호한다. 이 사본은 Control만 읽기 전용 마운트한다. volume은 비밀 자료이며 공유/로그에 넣지 않는다. 사용량 상한은 기존 사용자 지시대로 무제한이며 장부는 보존한다.
+- 호스트 자격: `~/Library/Application Support/WithHuman/Codex/<root-id>/<runtime>/`. 디렉터리0700/파일0600·현재 uid·심볼릭 링크/파일 hardlink 거부·배타적 생성. 기존 파일을 덮어쓰거나 권한 검사를 생략하지 않는다. 개인 Codex 설정은 변경하지 않는다.
+- up/dashboard: 같은 Compose의 Control/Gateway/Upstream과 로컬 조회 중계를 실행한다. Compose config의 JSON을 메모리에 받고 Control 키/정책 mount 두 개만 control-provider volume 하위 경로로 바꿔 stdin으로 Compose에 전달한다. 새 YAML 파일은 없다. 기본 포트8130/8140/8150은 localhost에만 공개한다. 브라우저에는 엔진 토큰을 전달하지 않는다. 외부 키 변경을 hash로 감지하면 기존 사본을 암묵적으로 계속 쓰거나 교체하지 않고 새 runtime/별도 회전을 요구한다.
+- check --engine-only: Codex 없이 Control의 CA 검증 HTTPS health와 Gate-6/Jev 설정을 확인한다. 실제 provider 인증이나 MCP 실행을 확인한 것으로 표시하지 않는다.
+- check/start: 설치된 codex를 찾아 기존 product_codex.py의 CLI 설정 검사/실행 경로로 연결한다. POSIX Hook 명령은 shell 인자를 인용해 공백과 메타문자를 보존한다. ASK 답변은 기존 native MCP elicitation 경로이며 단순 채팅/모델 주장으로 승인하지 않는다.
+- history/security/status/dashboard-stop/down: 조회·상태·종료. down은 volume/DB/사용량을 삭제하지 않는다. 실패 시 자격·volume·장부를 보존하고 자동 모델 재시도를 하지 않는다.
+
+기존 Windows 새 clone 검증과 아래 9절의 수치는 당시 결과다. 이번 Mac 진입점의 Linux POSIX 시험 및 ARM64 이미지 결과는 별도로 기록하며, 실제 macOS·Apple Silicon 하드웨어·Codex 사용자 질문 UI의 성공으로 확대하지 않는다.
+
+2026-10-28 실제 확인: 같은 고정 Dockerfile의 linux/arm64 runtime target 빌드 성공. 별도 volume·8330/8340/8350에서 ARM64 Control/Upstream/중계를 에뮬레이션 기동해 private provider 파일 UID 10001·0600, CA 검증 HTTPS, Gateway/MCP initialize·tools/list, 무인증 조회 거부, 대시보드 data_mode ENGINE·ONLINE·신규 빈 집계 조회를 확인했다. 모델·Jev·도구 실행은0회다. 조회 검증 도구의 첫 summary 요청은 필수 from/to 누락으로400이었고, 문서대로 기간을 지정해 재검증했다. 제품 API의 인증·기간 검증은 그대로 유지했다. 테스트 서비스는 종료하고 volume은 보존했다. 근거는 로컬 artifacts/mac-launcher-20261028/arm64-compose-result.json·arm64-build.log이며 Git에 비밀/실행 자료를 추가하지 않는다.
+
 ## 8. Git 공유 범위와 확인 근거
 
 API 공유의 핵심은 다음 소스와 이 문서다. 파일 내용 확인 없이 git add .로 작업 트리 전체를 올리지 않는다.

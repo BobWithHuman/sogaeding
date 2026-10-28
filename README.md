@@ -2,9 +2,9 @@
 
 사용자 요청·관측 자료·도구 실행 후보를 대조해 실행 전에 **ALLOW / DENY / ASK**를 판정하는 로컬 보안 엔진입니다. 기본 정책은 gate-6입니다. Codex 연결기와 조회 전용 대시보드를 함께 제공합니다.
 
-현재 지원 범위는 Windows의 Codex CLI와 제품 Docker 작업영역의 MCP `read_file` / `write_file`입니다. 일반 shell/native 도구 전체나 대화형 Claude Code의 ASK까지 지원한다고 주장하지 않습니다.
+현재 검증한 에이전트 범위는 Windows의 Codex CLI와 제품 Docker 작업영역의 MCP `read_file` / `write_file`입니다. macOS용 준비·실행 진입점도 제공하며, 실제 Mac의 Codex/ASK는 아직 미검증입니다. 일반 shell/native 도구 전체나 대화형 Claude Code의 ASK까지 지원한다고 주장하지 않습니다.
 
-## 처음 설치
+## Windows 처음 설치
 
 준비물: Git, PowerShell 5.1 이상, Docker Desktop(Linux containers), Python 3.12 이상, 로그인된 Codex CLI, 본인의 Jev API 키 파일. Codex 앱에 번들된 Python이 있으면 스크립트가 사용하며, 일반 PC는 설치한 Python을 사용합니다. 브라우저 조회만 할 때는 Codex 실행 단계가 필요 없습니다. 검증한 CLI는 Windows native codex-cli 0.154.0입니다. `codex.exe`가 PATH에 없으면 check/start에 `-CodexPath C:\설치경로\codex.exe`를 지정합니다.
 
@@ -36,7 +36,55 @@ ASK 흐름은 `reports/ask-demo.md`를 대상으로 요청해 확인할 수 있�
 
 **Jev 요청 횟수·토큰 상한은 기본적으로 두지 않습니다.** 사용량·실패 기록은 계속 남깁니다. 최초 prepare/up/check는 모델을 호출하지 않으며, 공급자의 실제 키 수락은 사용자의 의미 분석 요청 때 확인됩니다. 코드/프로토콜 검증을 모델 정확도나 모든 공격 방어로 확대하지 않습니다.
 
-## 다시 실행하거나 종료
+## macOS 처음 설치
+
+PowerShell은 필요 없습니다. Git, 실행 중인 Docker Desktop(Linux containers), Python **3.12 이상**이 필요합니다. `python3 --version`으로 확인하고, 설치된 명령이 `python3.12`라면 아래의 `python3`를 그 명령으로 바꿉니다. 대시보드 개발만 할 때는 Codex가 필요 없습니다. 에이전트 시험에는 로그인된 Codex CLI와 Hook·MCP 사용자 질문 기능이 필요합니다.
+
+먼저 저장소를 clone하거나 최신 코드를 pull합니다. 본인의 Jev 키 파일을 저장소 밖 `$HOME/.with-human-secrets/jev.api-key`에 준비하고 다음 권한을 적용합니다. 키 값을 명령어·Git·프롬프트에 넣지 않습니다. 아래 chmod는 이미 준비한 파일의 권한만 바꿉니다.
+
+```sh
+mkdir -p "$HOME/.with-human-secrets"
+chmod 700 "$HOME/.with-human-secrets"
+chmod 600 "$HOME/.with-human-secrets/jev.api-key"
+
+# 저장소 루트에서 실행. 최초 1회에만 prepare.
+python3 tools/product_local.py prepare --runtime local \
+  --jev-key-file "$HOME/.with-human-secrets/jev.api-key"
+python3 tools/product_local.py up --runtime local
+python3 tools/product_local.py check --runtime local --engine-only
+python3 tools/product_local.py dashboard --runtime local
+```
+
+브라우저에서 `http://127.0.0.1:8150/`을 열면 이 Mac에서 실행한 실제 엔진을 조회합니다. 신규 DB이므로 첫 집계는 비어 있을 수 있습니다. 합성 이력을 실제 판정처럼 넣지 않습니다. 위 단계는 Codex나 유료 모델을 실행하지 않으며, Jev 키의 실제 수락 여부는 의미 분석 요청 때 확인됩니다.
+
+Codex에서 요청·판정·ASK까지 시험하려면 이어서 실행합니다.
+
+```sh
+python3 tools/product_local.py check --runtime local
+python3 tools/product_local.py start --runtime local
+```
+
+`codex`가 PATH에 없으면 check/start에 `--codex-path /절대경로/codex`를 지정합니다. 기존 Codex 설정에 Hook/MCP 충돌이 있으면 덮어쓰지 않고 중단합니다. 질문과 도구 범위는 위 Windows 예제와 같습니다. 개인 설정·로그인·모델·sandbox는 변경하지 않습니다.
+
+```sh
+python3 tools/product_local.py history --runtime local
+python3 tools/product_local.py security --runtime local
+python3 tools/product_local.py status --runtime local
+python3 tools/product_local.py dashboard-stop --runtime local
+python3 tools/product_local.py down --runtime local
+```
+
+`down`은 DB·사용량 volume을 삭제하지 않습니다. 다시 실행할 때는 up/check/dashboard/start만 사용합니다. prepare를 반복하거나 같은 이름의 기존 자격/volume을 덮어쓰지 않습니다. 포트를 바꾸려면 최초 prepare에 서로 다른 `--control-port`, `--gateway-port`, `--dashboard-port`를 지정합니다.
+
+Mac 자격은 `~/Library/Application Support/WithHuman/Codex/<저장소ID>/<runtime>/`에 디렉터리0700·파일0600으로 생성합니다. Mac의 키 파일0600을 Docker UID 10001이 직접 읽지 못하는 문제를 피하기 위해, prepare가 키와 정책의 사본을 **Control만 마운트하는 volume 하위 디렉터리**에 표준 입력으로 전달합니다. volume에서도 디렉터리0700·파일0600·UID 10001을 유지합니다. 호스트 키 권한은 풀지 않으며 브라우저·Gateway·Upstream에 전달하지 않습니다. 이 volume도 비밀 자료로 취급하고 배포/공유하지 않습니다.
+
+외부 키를 바꾼 뒤 up하면 `EXTERNAL_KEY_CHANGED_PREPARE_NEW_RUNTIME`으로 중단합니다. 기존 runtime의 장부를 보존한 채 새 이름으로 prepare하거나 별도 검토된 키 회전 절차를 사용합니다. `PRIVATE_FILE_REQUIRED_CHMOD_600`이면 지정 키/자격의 소유자·권한을, `EXISTING_RUNTIME_PRESERVED_CHOOSE_NEW_NAME`이면 기존 상태를 보존하고 다른 runtime 이름을 확인합니다. 준비가 중간에 실패해도 자동 삭제·재시도하지 않습니다. Docker 파일 공유 오류는 저장소 폴더의 Docker Desktop 접근 허용을 확인합니다. CA/leaf 만료 기간과 유지보수 경계는 Windows와 같습니다.
+
+Mac용 진입점은 동일 Dockerfile·compose.yaml·Hook·MCP 연결기를 재사용합니다. Compose가 해석한 설정에서 Control의 키/정책 마운트 두 개만 volume으로 치환해 메모리의 JSON을 표준 입력으로 전달합니다. 추가 YAML/설정 파일이나 별도 엔진을 만들지 않습니다. Linux의 POSIX 권한/명령 검증은 실제 macOS 파일 공유·Codex UI 검증을 대신하지 않습니다. 이 경로는 팀원 Mac에서 실행 확인이 필요합니다.
+
+2026-10-28 확인: Linux POSIX 권한/준비 회귀, Linux ARM64 이미지 빌드와 에뮬레이션 기동, 실제 TLS·MCP 도구 목록·대시보드 상태/집계 조회를 통과했습니다. 실제 actor/Jev 호출은0회이며 실제 Mac 하드웨어·Codex ASK UI는 미검증입니다.
+
+## Windows에서 다시 실행하거나 종료
 
 같은 이름으로 prepare를 반복하면 기존 상태 보호를 위해 거부합니다. 이후에는 up → check → dashboard → start만 사용합니다.
 
@@ -61,6 +109,7 @@ ASK 흐름은 `reports/ask-demo.md`를 대상으로 요청해 확인할 수 있�
 | `scripts/product_codex.ps1` | 준비·기동·점검·Codex 연결·이력·종료 |
 | `scripts/dashboard_local.ps1` | localhost 대시보드 기동·종료 |
 | `scripts/team_dev.ps1` | 위 진입점에서 사용하는 공통 빌드·volume/망 준비와 선택적 시험 |
+| `tools/product_local.py` | macOS/POSIX의 준비·기동·조회·대시보드·기존 Codex 연결기 실행. 호스트 추가 pip 패키지 불필요 |
 | `src/`, 연결기 helper | 엔진·권한·Jev·저장·ASK·조회·실제 집행 |
 | `tests/product/`, 개발 의존성 lock | 수정 시 무모델 회귀 시험. 기본 실행 이미지에는 시험 도구를 넣지 않음 |
 
