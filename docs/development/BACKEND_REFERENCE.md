@@ -32,6 +32,10 @@
 
 Control은 판정·상태·권한을 관리한다. Gateway는 실제 MCP 요청을 중계하고 최종 집행 검사를 거친다. Upstream은 허용된 정확한 파일 도구를 실행한다. Jev의 응답 자체가 실행 권한은 아니다.
 
+2026-10-28 자연어 작업 안내 보완: 제품 start/cli-check는 해당 자식 실행에만 `features.shell_tool=false`를 적용한다. MCP initialize와 tools/list에 파일 작업영역이 Docker 안에 있다는 설명을 제공해 일반 파일 요청에서 등록 도구를 선택하도록 안내한다. 도구 schema·엔진 정책·ASK 인증·sandbox/승인 설정은 바꾸지 않는다. 기본 셸 도구를 숨기는 것은 미등록 도구 Hook을 통과시키는 예외가 아니며, 다른 native 도구의 차단도 유지한다. 이 metadata에는 시연 파일명·공격 정답·예상 판정을 넣지 않는다. 실제 모델의 도구 선택은 별도 리허설로 확인한다.
+
+제품 start/check는 `codex mcp list --json`으로 실제 병합된 MCP 목록을 읽고, 다른 개인/자동 등록 서버는 자식 실행의 `enabled=false`로 분리한다. 자동 등록 stdio 서버가 비활성 레코드에도 transport를 요구하는 경우 실행 파일 경로만 유지한다. 비밀 URL·headers·args·env 값을 명령줄로 복사하지 않는다. 변경 후 실제 활성 서버가 with_human만인지 확인하고 아니면 시작하지 않는다. 개인 config.toml과 다른 Codex 프로세스는 변경하지 않는다. 외부 MCP의 기동 오류를 제품 파일 경로의 성공/실패로 혼동하지 않는다.
+
 ALLOW는 실행 허용 후보이며 성공과 다르다. 실제 실행 결과가 관측되어 `OBSERVED`가 되면 `execution.outcome=SUCCEEDED`로 표시한다. 결과를 확정하지 못한 `UNKNOWN`을 성공이나 미실행으로 바꾸지 않는다.
 
 ## 3. 주소·인증·브라우저 연결
@@ -172,6 +176,8 @@ ASK→ALLOW인 후보는 최초 ASK1건·최종 ALLOW1건이다. ALLOW와 ASK �
 ID는 hash 기반 opaque 값이다. 현재 `event_id`는64자리 소문자 hex이고 상세 URL에 넣어 조회한다. 응답 ID를 원래 DB ID로 역추정하거나 실행 권한으로 사용하지 않는다.
 
 상세에는 추가로 `user_request_summary`, `candidate_summary`, `sources`, `checks`, `ask_history`, `timeline`이 있다. 원문 요청/쓰기 본문은 비공개다. source의 integrity/completeness는 이 조회 경로에서 검증하지 않아 UNKNOWN이다. agent unknown과 마찬가지로 화면에서 임의로 VERIFIED로 바꾸지 않는다.
+
+2026-10-28 npm 시연 어댑터: `run_npm_install`은 신뢰된 transport 결과에서 타입 검증된 `execution.exit_code`를 추가로 제공한다. exit 0은 SUCCEEDED, 비영 종료는 REPORTED_ERROR, 결과가 없거나 타입이 유효하지 않으면 UNKNOWN이다. 기존 OBSERVED 상태만으로 npm 설치 성공을 추정하지 않는다. stderr/stdout은 DTO에 포함하지 않는다. npm 도구의 `candidate_summary.action`은 read/write/execute를 사용하며 `old_text`, `new_text`는 고정 비공개 문구로 대체한다.
 
 `ask_history.reason_details`는 보류 당시 사유 코드에 대한 안전한 설명 목록이다. 사용자 답변 원문·nonce는 포함하지 않는다. 실제 질문에는 정확한 실행 후보가 들어가므로 그 원문은 연결기 전용이며 대시보드의 `question_redacted`와 구분한다.
 

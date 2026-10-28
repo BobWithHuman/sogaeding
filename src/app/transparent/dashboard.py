@@ -11,10 +11,11 @@ from collections import Counter
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
+from cryptography.fernet import InvalidToken
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from app.common import canonical, digest, mask
+from app.common import SafeError, canonical, digest, mask, strict_json
 from app.transparent.privacy import PrivacyError, TransmissionMasker
 
 DECISIONS = ('ALLOW','DENY','ASK','UNKNOWN')
@@ -79,6 +80,36 @@ def outcome(state):
     return 'NOT_EXECUTED'
 
 
+def execution_projection(engine, db, row, tool):
+    """Read typed exit status from the bound trusted transport, never tool text claims.
+
+    OBSERVED records delivery, including an npm process reporting nonzero exit.
+    Only the exit code leaves this projection; stdout/stderr remain private.
+    """
+    result={'outcome':outcome(row['state'])}
+    if tool!='run_npm_install' or row['state']!='OBSERVED':
+        return result
+    result['outcome']='UNKNOWN'
+    transport=db.execute('SELECT body FROM transport WHERE call=?',(row['id'],)).fetchone()
+    if transport is None:
+        return result
+    try:
+        wire=engine.open(transport[0])
+        if not isinstance(wire,dict):
+            return result
+        blocks=wire.get('content')
+        if (wire.get('isError') or not isinstance(blocks,list) or len(blocks)!=1
+                or not isinstance(blocks[0],dict) or blocks[0].get('type')!='text'):
+            return result
+        value=strict_json(blocks[0]['text'])
+        exit_code=value['exit_code']
+        if type(exit_code) is not int or not -(2**31)<=exit_code<2**31:
+            return result
+    except (ValueError,TypeError,KeyError,IndexError,InvalidToken,SafeError):
+        return result
+    return {'outcome':'SUCCEEDED' if exit_code==0 else 'REPORTED_ERROR','exit_code':exit_code}
+
+
 def origin(decision, reasons, routing, asks):
     if decision != 'DENY':
         return None
@@ -125,13 +156,14 @@ class Projection:
                     times.extend(datetime.fromisoformat(v.replace('Z','+00:00')).timestamp() for k,v in a.items() if k in ('issued_at','presented_at','answered_at','resolved_at') and isinstance(v,str))
                 decision=row['decision'] if row['decision'] in DECISIONS else 'UNKNOWN'
                 args=body.get('args',{})
+                execution=execution_projection(e,db,row,body.get('tool'))
                 # Agent identity is not recorded by the current trusted connector.
                 # Never guess it from a session name or from model/tool arguments.
                 item={'event_id':digest(row['id']),'call_id':digest(row['id']),'session_id':digest(row['session']),
                       'turn_id':digest(row['turn']),'created_at':stamp(row['created']),'updated_at':stamp(max(times)),
                       'agent':'unknown','tool':code(body.get('tool')),'target_display':display(args.get('path')),
                       'initial_decision':'ASK' if asks else decision,'decision':decision,'engine_state':code(row['state']),
-                      'execution':{'outcome':outcome(row['state']),
+                      'execution':{**execution,
                                    'started_at':next((stamp(a['at']) for a in audits if a['kind']=='EXECUTE'),None),
                                    'observed_at':stamp(max(times)) if row['state'] in ('OBSERVED','OBSERVED_ERROR') else None},
                       'routing':routing,'denial_origin':origin(decision,reasons,routing,asks),
@@ -139,9 +171,9 @@ class Projection:
                       'ask':{k:asks[-1].get(k) for k in ('ask_id','state','outcome')} if asks else None,
                       'redacted':True,'context_status':'AVAILABLE_REDACTED',
                       'user_request_summary':'[원문 요청 비공개]',
-                      'candidate_summary':{'action':'write' if body.get('tool')=='write_file' else 'read' if body.get('tool')=='read_file' else 'unknown',
-                          'target':display(args.get('path')),'arguments_redacted':{'path':display(args.get('path')),**({'content':'[본문 비공개]'} if 'content' in args else {})}},
-                      'sources':[], 'checks':[{'name':'JEV_'+v,'result':'COMPLETED' if (ctx.get('view_checks',{}).get(v) or {}).get('status')=='VALID' else 'NOT_RUN' if (ctx.get('view_checks',{}).get(v) or {}).get('status') in (None,'NOT_RUN') else 'UNKNOWN'} for v in ('A','B')],
+                      'candidate_summary':{'action':{'write_file':'write','edit_project_file':'write','read_file':'read','read_project_file':'read','read_github_issue':'read','run_npm_install':'execute'}.get(body.get('tool'),'unknown'),
+                          'target':display(args.get('path')),'arguments_redacted':{'path':display(args.get('path')),**{key:'[본문 비공개]' for key in ('content','old_text','new_text') if key in args}}},
+                      'sources':[], 'checks':[{'name':'JEV_'+v,'result':'COMPLETED' if (ctx.get('view_checks',{}).get(v) or {}).get('status')=='VALID' else 'NOT_RUN' if (ctx.get('view_checks',{}).get(v) or {}).get('status') in (None,'NOT_RUN','NOT_RUN_RULE') else 'UNKNOWN'} for v in ('A','B')],
                       'ask_history':asks,
                       'timeline':[{'at':stamp(row['created']),'type':'CANDIDATE_REGISTERED','label':'실행 후보 등록'},
                                   *[{'at':stamp(a['at']),'type':code(a['kind'])+'_'+code(a['code']),'label':code(a['kind'])+' / '+code(a['code'])} for a in audits]]}

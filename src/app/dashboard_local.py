@@ -55,6 +55,10 @@ def create_app(engine_url, token, *, ca_file=None, transport=None):
     async def javascript():
         return FileResponse(ASSETS/'app.js',media_type='text/javascript')
 
+    @app.get('/styles.css')
+    async def stylesheet():
+        return FileResponse(ASSETS/'styles.css',media_type='text/css')
+
     @app.get('/dashboard/v1/{path:path}')
     async def proxy(path:str,request:Request):
         import re

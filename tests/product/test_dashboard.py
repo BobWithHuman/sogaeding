@@ -103,9 +103,44 @@ def test_bff_session_origin_read_only_proxy_and_token_stays_server_side(engine):
             assert (await c.get('/dashboard/v1/status')).status_code==401
             page=await c.get('/')
             assert page.status_code==200 and 'HttpOnly' in page.headers['set-cookie']
+            stylesheet=await c.get('/styles.css')
+            assert stylesheet.status_code==200 and stylesheet.headers['content-type'].startswith('text/css')
+            assert 'var(--' in stylesheet.text and KEYS['human'] not in stylesheet.text
             response=await c.get('/dashboard/v1/status')
             assert response.status_code==200 and KEYS['human'] not in response.text
             assert (await c.get('/dashboard/v1/status',headers={'Origin':'https://attacker.invalid'})).status_code==403
             assert (await c.get('/dashboard/v1/approval')).status_code==404
             assert (await c.post('/dashboard/v1/events')).status_code==405
     asyncio.run(send())
+
+
+@pytest.mark.parametrize('exit_code,expected',[(0,'SUCCEEDED'),(1,'REPORTED_ERROR'),(-1,'REPORTED_ERROR'),
+    (True,'UNKNOWN'),('0','UNKNOWN'),(None,'UNKNOWN')])
+def test_npm_projection_uses_typed_exit_code_without_disclosing_output(engine,exit_code,expected):
+    import json
+
+    engine.turn('m','npm-session','t','PRIVATE_PROMPT_CANARY','/files')
+    engine.register('m','npm-session','t','npm-call','run_npm_install',{},'mcp')
+    wire={'isError':False,'content':[{'type':'text','text':json.dumps({
+        'exit_code':exit_code,'stdout':'PRIVATE_STDOUT_CANARY','stderr':'PRIVATE_STDERR_CANARY'})}]}
+    with engine.db() as db:
+        db.execute("UPDATE calls SET state='OBSERVED' WHERE id='npm-call'")
+        db.execute('INSERT INTO transport VALUES(?,?)',('npm-call',engine.seal(wire)))
+    app=public_app(create_app(engine,KEYS))
+    response=get(app,'/dashboard/v1/events/'+digest('npm-call'))
+    assert response.status_code==200
+    value=response.json()
+    assert value['execution']['outcome']==expected
+    assert value['candidate_summary']['action']=='execute'
+    assert ('exit_code' in value['execution'])==(expected!='UNKNOWN')
+    assert all(s not in response.text for s in ('PRIVATE_PROMPT_CANARY','PRIVATE_STDOUT_CANARY','PRIVATE_STDERR_CANARY'))
+    assert get(app,'/dashboard/v1/summary',interval()).json()['execution_outcomes'][expected]==1
+
+
+def test_npm_observed_without_transport_is_unknown(engine):
+    engine.turn('m','npm-session','t','Install the project.','/files')
+    engine.register('m','npm-session','t','npm-call','run_npm_install',{},'mcp')
+    with engine.db() as db:
+        db.execute("UPDATE calls SET state='OBSERVED' WHERE id='npm-call'")
+    app=public_app(create_app(engine,KEYS))
+    assert get(app,'/dashboard/v1/events/'+digest('npm-call')).json()['execution']['outcome']=='UNKNOWN'
