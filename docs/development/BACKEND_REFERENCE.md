@@ -300,6 +300,8 @@ Mac에서는 Windows 전용 PowerShell/DACL 준비기를 쓰지 않고 `python3 
 
 기존 Windows 새 clone 검증과 아래 9절의 수치는 당시 결과다. 이번 Mac 진입점의 Linux POSIX 시험 및 ARM64 이미지 결과는 별도로 기록하며, 실제 macOS·Apple Silicon 하드웨어·Codex 사용자 질문 UI의 성공으로 확대하지 않는다.
 
+코드348fb0b의 새 clone에서 제품/POSIX 시험213개 PASS·5개 skip(제거된 과거 control 모듈2개, 별도 TLS 통합 서비스용3개). POSIX 키/자격 권한·기존 상태 보존·Control 전용 복사·Compose 마운트 치환·기존 Codex helper 연결·shell 인자 인용을 포함한다. Docker 명령을 모의한 단위 시험과 다음 실제 ARM64 서비스 검증을 구분한다. 변경 코드 정적 검사도 통과했다.
+
 2026-10-28 실제 확인: 같은 고정 Dockerfile의 linux/arm64 runtime target 빌드 성공. 별도 volume·8330/8340/8350에서 ARM64 Control/Upstream/중계를 에뮬레이션 기동해 private provider 파일 UID 10001·0600, CA 검증 HTTPS, Gateway/MCP initialize·tools/list, 무인증 조회 거부, 대시보드 data_mode ENGINE·ONLINE·신규 빈 집계 조회를 확인했다. 모델·Jev·도구 실행은0회다. 조회 검증 도구의 첫 summary 요청은 필수 from/to 누락으로400이었고, 문서대로 기간을 지정해 재검증했다. 제품 API의 인증·기간 검증은 그대로 유지했다. 테스트 서비스는 종료하고 volume은 보존했다. 근거는 로컬 artifacts/mac-launcher-20261028/arm64-compose-result.json·arm64-build.log이며 Git에 비밀/실행 자료를 추가하지 않는다.
 
 ## 8. Git 공유 범위와 확인 근거

@@ -82,7 +82,7 @@ Mac 자격은 `~/Library/Application Support/WithHuman/Codex/<저장소ID>/<runt
 
 Mac용 진입점은 동일 Dockerfile·compose.yaml·Hook·MCP 연결기를 재사용합니다. Compose가 해석한 설정에서 Control의 키/정책 마운트 두 개만 volume으로 치환해 메모리의 JSON을 표준 입력으로 전달합니다. 추가 YAML/설정 파일이나 별도 엔진을 만들지 않습니다. Linux의 POSIX 권한/명령 검증은 실제 macOS 파일 공유·Codex UI 검증을 대신하지 않습니다. 이 경로는 팀원 Mac에서 실행 확인이 필요합니다.
 
-2026-10-28 확인: Linux POSIX 권한/준비 회귀, Linux ARM64 이미지 빌드와 에뮬레이션 기동, 실제 TLS·MCP 도구 목록·대시보드 상태/집계 조회를 통과했습니다. 실제 actor/Jev 호출은0회이며 실제 Mac 하드웨어·Codex ASK UI는 미검증입니다.
+2026-10-28 확인: 새 clone에서 제품/POSIX 시험213개 통과·5개 skip. Linux ARM64 이미지 빌드와 에뮬레이션 기동, 실제 TLS·MCP 도구 목록·대시보드 상태/집계 조회를 통과했습니다. 실제 actor/Jev 호출은0회이며 실제 Mac 하드웨어·Codex ASK UI는 미검증입니다.
 
 ## Windows에서 다시 실행하거나 종료
 
