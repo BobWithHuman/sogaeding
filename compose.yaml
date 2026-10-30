@@ -51,7 +51,7 @@ services:
       - type: volume
         source: team-runtime
         target: /jev-budget
-        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/jev-budget"}
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/jev-budget", nocopy: true}
       - type: volume
         source: team-runtime
         target: /runtime
@@ -60,7 +60,7 @@ services:
       - type: volume
         source: team-runtime
         target: /data
-        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/control-data"}
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/control-data", nocopy: true}
   upstream:
     <<: *app
     command: [python, -m, app.transparent.upstream]
@@ -75,7 +75,7 @@ services:
       - type: volume
         source: team-runtime
         target: /data
-        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/upstream-data"}
+        volume: {subpath: "artifacts/team-dev/${SOGAEDING_RUNTIME_NAME:-default}/upstream-data", nocopy: true}
       - type: volume
         source: team-runtime
         target: /files
