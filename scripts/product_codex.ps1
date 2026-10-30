@@ -1,14 +1,12 @@
 param(
-    [ValidateSet('build','prepare','attach','up','check','start','history','security','down','dashboard','status','scenario')][string]$Mode='check',
+    [ValidateSet('build','prepare','attach','up','check','start','history','security','down')][string]$Mode='check',
     [ValidatePattern('^[a-z0-9][a-z0-9-]{0,47}$')][string]$RuntimeName='codex-gate6',
     [string]$JevKeyFile='',
     [ValidateRange(1,1000)][Nullable[int]]$ApproveJevRequests,
     [ValidateRange(64000,64000000)][Nullable[int]]$ApproveJevInputTokens,
     [string]$PythonPath='', [string]$CodexPath='',
     [ValidateRange(1024,65535)][int]$ControlPort=8130,
-    [ValidateRange(1024,65535)][int]$GatewayPort=8140,
-    [switch]$NpmLab,
-    [ValidateSet('normal','attack','ask')][string]$Scenario=''
+    [ValidateRange(1024,65535)][int]$GatewayPort=8140
 )
 $ErrorActionPreference='Stop'
 $productRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -129,7 +127,7 @@ try {
         if($LASTEXITCODE -ne 0){throw 'Existing connector export failed; runtime unchanged.'}
         $productBundle=($productBundleText -join '') | ConvertFrom-Json
         if($productBundle.format -ne 'product-connector-bundle-1' -or @($productBundle.roles.PSObject.Properties).Count -ne 4){throw 'Invalid connector bundle.'}
-        if($productBundle.adapter -notin @($null,'npm-lab-1')){throw 'Unsupported product adapter.'}
+        if($null -ne $productBundle.adapter){throw 'This deployment supports the enrolled file adapter only.'}
         New-Item -ItemType Directory -Path $productClient -ErrorAction Stop | Out-Null
         Protect-ProductDirectory $productClient
         New-Item -ItemType Directory -Path $productHost -ErrorAction Stop | Out-Null
@@ -140,7 +138,6 @@ try {
         }
         $productProfile=@{format='product-codex-1';workspace=$productRoot;engine_workspace='/files';mcp_only=$true;control_url=('https://127.0.0.1:'+$ControlPort);gateway_url=('https://127.0.0.1:'+$GatewayPort+'/mcp')}
         $productConnectionSettings=@{key_file=$productKey.FullName;control_port=$ControlPort;gateway_port=$GatewayPort;workspace=$productRoot}
-        if($productBundle.adapter){$productProfile.toolset=$productBundle.adapter; $productConnectionSettings.adapter=$productBundle.adapter}
         [IO.File]::WriteAllText((Join-Path $productHost 'profile.json'),($productProfile | ConvertTo-Json))
         $productConnectionSettings | ConvertTo-Json | Set-Content -LiteralPath $productSettings -Encoding utf8
         Assert-PrivateClient
@@ -157,7 +154,7 @@ try {
         if($productKey.PSIsContainer -or ($productKey.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'A regular external Jev key file is required.'}
         & (Join-Path $PSScriptRoot 'team_dev.ps1') -Mode build
         if($LASTEXITCODE -ne 0){throw 'Product image build failed.'}
-        & (Join-Path $PSScriptRoot 'team_dev.ps1') -Mode prepare -RuntimeName $RuntimeName -ControlPort $ControlPort -GatewayPort $GatewayPort -NpmLab:$NpmLab
+        & (Join-Path $PSScriptRoot 'team_dev.ps1') -Mode prepare -RuntimeName $RuntimeName -ControlPort $ControlPort -GatewayPort $GatewayPort
         if($LASTEXITCODE -ne 0){throw 'Runtime preparation failed.'}
         $productPrepared=Get-Content -LiteralPath (Join-Path $productRuntime 'prepared.json') -Raw | ConvertFrom-Json
         if($productPrepared.volume -ne ('sogaeding-team-'+$productRootId+'-'+$RuntimeName+'-runtime') -or $productPrepared.root_id -ne $productRootId){throw 'Prepared runtime identity mismatch.'}
@@ -184,10 +181,8 @@ try {
         }
         $productBundle=$null; $productBundleText=$null; $productRoleBytes=$null
         $productProfile=@{format='product-codex-1';workspace=$productRoot;engine_workspace='/files';mcp_only=$true;control_url=('https://127.0.0.1:'+$ControlPort);gateway_url=('https://127.0.0.1:'+$GatewayPort+'/mcp')}
-        if($NpmLab){$productProfile.toolset='npm-lab-1'}
         [IO.File]::WriteAllText((Join-Path $productHost 'profile.json'),($productProfile | ConvertTo-Json))
         $productConnectionSettings=@{key_file=$productKey.FullName;control_port=$ControlPort;gateway_port=$GatewayPort;workspace=$productRoot}
-        if($NpmLab){$productConnectionSettings.adapter='npm-lab-1'}
         $productConnectionSettings | ConvertTo-Json | Set-Content -LiteralPath $productSettings -Encoding utf8
         Assert-PrivateClient
         Write-Host 'Prepared new Codex connector; model requests 0. Use up, check, then start.'
@@ -195,7 +190,7 @@ try {
     }
     if(-not (Test-Path -LiteralPath $productSettings)){
         if(Test-Path -LiteralPath (Join-Path $productRuntime 'prepared.json')){
-            throw "Engine runtime exists, but connector settings were not found at '$productSettings'. Existing runtime preserved; do not prepare it again."
+            throw "Engine runtime exists, but connector settings were not found at '$productSettings'. In this PowerShell, run: powershell.exe -NoProfile -File .\scripts\product_codex.ps1 -Mode attach -RuntimeName $RuntimeName . Existing runtime preserved; do not prepare it again."
         }
         throw "Connector settings not found at '$productSettings'. Run product_codex.ps1 -Mode prepare first."
     }
@@ -203,25 +198,8 @@ try {
     $productConnection=Get-Content -LiteralPath $productSettings -Raw | ConvertFrom-Json
     $env:SOGAEDING_JEV_KEY_FILE=$productConnection.key_file
     $env:SOGAEDING_JEV_POLICY_FILE=$productPolicyFile
-    if($productConnection.adapter -eq 'npm-lab-1' -and $Mode -in @('up','down','check','dashboard','status','scenario')){
-        if($Mode -eq 'up'){
-            & (Join-Path $PSScriptRoot 'team_dev.ps1') -Mode networks -RuntimeName $RuntimeName
-            if($LASTEXITCODE -ne 0){throw 'Lab network selection failed.'}
-        }
-        if($Mode -eq 'check'){
-            if(-not $CodexPath){$CodexPath=(Get-Command codex.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source}
-            Invoke-ProductPython cli-check --host $productHost --exe $CodexPath
-        }
-        $productLabExtra=@()
-        if($Mode -eq 'scenario'){
-            if(-not $Scenario){throw 'scenario requires -Scenario normal, attack or ask. Close Codex first.'}
-            $productLabExtra=@('--scenario',$Scenario)
-        }
-        & $PythonPath -X utf8 -I (Join-Path $productRoot 'tools/npm_demo.py') $Mode --runtime $RuntimeName --host $productHost @productLabExtra
-        if($LASTEXITCODE -ne 0){throw 'Npm lab command failed. Existing runtime preserved.'}
-    } elseif($Mode -in @('dashboard','status')){
-        throw 'These modes are currently available for the npm lab profile only.'
-    } elseif($Mode -in @('up','down')){
+    if($productConnection.adapter){throw 'This deployment supports the enrolled file adapter only.'}
+    if($Mode -in @('up','down')){
         & (Join-Path $PSScriptRoot 'team_dev.ps1') -Mode $Mode -RuntimeName $RuntimeName -ControlPort $productConnection.control_port -GatewayPort $productConnection.gateway_port
         if($LASTEXITCODE -ne 0){throw 'Product services command failed.'}
     } elseif($Mode -eq 'start') {

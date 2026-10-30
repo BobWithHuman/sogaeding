@@ -43,3 +43,32 @@ body{font-size:12px}
 
 /* Live integration: session scope and actual-data filters. */
 .filterbar{flex-wrap:wrap}.filterbar .session-filter{flex:1 1 240px}.filterbar input{width:100%;min-width:160px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--text);padding:8px;font:inherit}
+
+/* Plain-language decision evidence: fixed server explanations, no raw context. */
+.reason-label{display:block;font-size:12px;line-height:1.6;word-break:keep-all}
+.reason-code{margin-top:4px;color:var(--dim);overflow-wrap:anywhere}
+.detail-section h3{font-size:14px;letter-spacing:0;text-transform:none;color:var(--text)}
+.detail-cell span{font-size:11px;color:var(--muted)}.detail-cell strong{font-size:13px;word-break:keep-all}
+.event-summary strong{font-size:17px;line-height:1.6}.event-summary p{margin:2px 0;font-size:13px;color:var(--muted)}
+.reason-cards{display:grid;gap:10px}.reason-card,.semantic-card{padding:14px 16px;border:1px solid var(--line);background:var(--surface-2);border-radius:var(--radius)}
+.reason-card h4,.semantic-card h4{margin:0 0 7px;font-size:14px;font-weight:650}.reason-card p,.semantic-card p{margin:0;line-height:1.8;font-size:13px;word-break:keep-all;overflow-wrap:anywhere}
+.reason-card code{display:block;margin-top:9px;color:var(--dim);font-size:10px;overflow-wrap:anywhere}
+.explanation-source{font-size:13px;color:var(--muted)}.explanation-source strong{color:var(--text)}
+.explanation-effect{padding:10px 0;font-size:13px;line-height:1.8}.explanation-note{margin-top:12px;padding:12px;background:var(--surface-2);color:var(--muted);font-size:12px;line-height:1.8}
+.semantic-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.semantic-card p{margin-top:8px}.confidence{display:block;margin-top:9px;font-size:12px;color:var(--blue)}
+.timeline-item strong{display:block;font-size:12px}.timeline-item .subtle{margin-top:3px;overflow-wrap:anywhere}
+@media(max-width:600px){.semantic-grid{grid-template-columns:1fr}}
+.semantic-card .condition{margin-top:9px;font-size:12px;color:var(--green)}.semantic-card .condition.not-met{color:var(--yellow)}
+.detail-section>.subtle{white-space:normal;overflow:visible;line-height:1.8}
+.task-context{margin:18px 0;padding:16px;border:1px solid var(--line);background:var(--surface-2);border-radius:var(--radius)}
+.task-context h3{margin:0 0 10px;font-size:15px}.task-context p{font-size:13px;line-height:1.8;overflow-wrap:anywhere}.task-context .task-sentence{font-size:15px;font-weight:600}
+.task-context code{color:var(--blue);overflow-wrap:anywhere;white-space:normal}.context-boundary{color:var(--muted);border-top:1px solid var(--line);padding-top:10px;font-size:12px!important}
+.review-flow{padding-left:22px}.review-flow li{padding:5px 0 10px}.review-flow strong{font-size:13px}.review-flow p{margin:5px 0 0;font-size:13px;line-height:1.8;color:var(--muted)}
+.decision-conclusion{padding:14px 16px;border-left:3px solid var(--yellow);background:var(--yellow-soft);font-size:13px;line-height:1.8}
+.preview-field{margin:10px 0;padding:13px 15px;border:1px solid var(--line);background:var(--surface-2);border-radius:var(--radius)}.preview-field h4{margin:0 0 7px;font-size:13px}
+.preview-status{font-size:12px;color:var(--muted);line-height:1.7}.preview-text{margin:9px 0 0;max-height:190px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.8 ui-monospace,SFMono-Regular,monospace;color:var(--text)}
+.policy-rule{padding:14px 16px;border-left:3px solid var(--blue);background:var(--surface-2);font-size:13px;line-height:1.8}.policy-rule dt{margin-top:10px;color:var(--muted);font-size:12px}.policy-rule dt:first-child{margin-top:0}.policy-rule dd{margin:2px 0 0;overflow-wrap:anywhere;word-break:keep-all}
+.detail-record-note{font-size:12px;line-height:1.8;color:var(--muted);padding:9px 12px;border:1px solid var(--line);border-radius:var(--radius)}
+.source-card{margin:12px 0;padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-2);min-width:0}
+.source-card h4{margin:0 0 8px;font-size:15px;overflow-wrap:anywhere}.source-card p{font-size:13px;line-height:1.7}
+.source-relationship{color:var(--accent);font-weight:650}.source-document{margin-top:12px}.source-document summary{cursor:pointer;font-size:13px;line-height:1.8}.source-document .preview-text{max-height:380px;overflow:auto}

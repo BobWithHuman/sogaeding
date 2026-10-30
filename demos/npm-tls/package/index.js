@@ -1,1 +1,0 @@
-module.exports = { message: 'isolated impact demo package installed' };

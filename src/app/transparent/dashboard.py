@@ -17,6 +17,9 @@ from fastapi.responses import JSONResponse
 
 from app.common import SafeError, canonical, digest, mask, strict_json
 from app.transparent.privacy import PrivacyError, TransmissionMasker
+from app.transparent.dashboard_explain import explain, reason_text
+from app.transparent.dashboard_preview import PreviewMasker, content_preview
+from app.transparent.dashboard_sources import source_preview
 
 DECISIONS = ('ALLOW','DENY','ASK','UNKNOWN')
 OUTCOMES = ('SUCCEEDED','REPORTED_ERROR','NOT_EXECUTED','IN_PROGRESS','UNKNOWN')
@@ -125,11 +128,28 @@ def origin(decision, reasons, routing, asks):
 
 
 class Projection:
-    def __init__(self, engine, machine):
+    def __init__(self, engine, machine, preview_forbidden=()):
         self.engine, self.machine = engine, machine
         self.cursor_key = secrets.token_bytes(32)
+        self.preview_forbidden = preview_forbidden
 
-    def events(self, start, end):
+    def preview_masker(self, caller):
+        forbidden = [*self.preview_forbidden, caller]
+        settings = getattr(getattr(self.engine.policy_router, 'client', None), 'settings', None)
+        if settings is not None and settings.authorized():
+            try:
+                path = Path(settings.key_path)
+                if path.is_symlink() or not path.is_file() or path.stat().st_size > 4096:
+                    return None
+                key = path.read_text(encoding='ascii').strip()
+                if not 16 <= len(key) <= 2048 or any(c.isspace() for c in key):
+                    return None
+                forbidden.append(key)
+            except (OSError, ValueError, UnicodeError, AttributeError):
+                return None
+        return PreviewMasker(self.cursor_key, forbidden)
+
+    def events(self, start, end, *, preview_event=None, preview_caller=''):
         e = self.engine
         with e.db() as db:
             # Exclude expired raw context even before the periodic purge executes.
@@ -167,7 +187,7 @@ class Projection:
                                    'started_at':next((stamp(a['at']) for a in audits if a['kind']=='EXECUTE'),None),
                                    'observed_at':stamp(max(times)) if row['state'] in ('OBSERVED','OBSERVED_ERROR') else None},
                       'routing':routing,'denial_origin':origin(decision,reasons,routing,asks),
-                      'reasons':[{'code':r,'label':r} for r in reasons], 'policy':code(ctx.get('policy'),self.engine.policy),
+                      'reasons':[{'code':r,'label':reason_text(r)[0]} for r in reasons], 'policy':code(ctx.get('policy'),self.engine.policy),
                       'ask':{k:asks[-1].get(k) for k in ('ask_id','state','outcome')} if asks else None,
                       'redacted':True,'context_status':'AVAILABLE_REDACTED',
                       'user_request_summary':'[원문 요청 비공개]',
@@ -181,6 +201,19 @@ class Projection:
                         WHERE s.session=? AND c.created<=? LIMIT 64''',(row['session'],row['created'])):
                     # No raw source or tool result is read into the browser DTO.
                     item['sources'].append({'source_id':digest(source['id']),'label':'서버 관측 자료','origin':'TOOL_OBSERVATION','integrity':'UNKNOWN','completeness':'UNKNOWN','excerpt_redacted':None})
+                matching_grant = ctx.get('grant_hash') == e.grant_hash
+                hits = []
+                if matching_grant and 'PROTECTED_RESOURCE' in reasons:
+                    encoded_candidate = canonical(body).casefold()
+                    for marker in e.grant.get('protected_markers', []):
+                        if isinstance(marker, str) and marker and marker.casefold() in encoded_candidate:
+                            public_marker = marker if marker in {'.env','.git/','.aws','.codex','artifacts/'} else '[비공개 보호 표식]'
+                            hits.append({'marker': public_marker, 'location': 'TARGET' if marker.casefold() in str(args.get('path','')).casefold() else 'ARGUMENTS'})
+                item['explanation'] = explain(item, ctx, {'grant_matches':matching_grant, 'resource_hits':hits[:4]})
+                if preview_event is not None and item['event_id'] == preview_event:
+                    masker = self.preview_masker(preview_caller)
+                    item['content_preview'] = content_preview(e, db, row, body, masker)
+                    item['source_preview'] = source_preview(e, db, row, ctx, masker, stamp)
                 result.append(item)
         return sorted(result,key=lambda i:(i['created_at'],i['event_id']),reverse=True)
 
@@ -260,11 +293,11 @@ class Projection:
                 'asks':{'total_requests':len(ask),**counts((a['state'] for a in ask),ASKS)},
                 'denials':counts((i['denial_origin'] for i in items),ORIGINS),'jev':self.ledger(),
                 'series':[{'bucket_start':stamp(at),'total_calls':len(values),**{'initial_'+k:v for k,v in counts((i['initial_decision'] for i in values),DECISIONS).items()}} for at,values in sorted(groups.items())],
-                'reasons':[{'code':k,'count':v} for k,v in Counter(r['code'] for i in items for r in i['reasons']).most_common()]}
+                'reasons':[{'code':k,'label':reason_text(k)[0],'count':v} for k,v in Counter(r['code'] for i in items for r in i['reasons']).most_common()]}
 
 
-def register(app,engine,machine,auth):
-    projection=Projection(engine,machine)
+def register(app,engine,machine,auth, *, preview_forbidden=()):
+    projection=Projection(engine,machine,preview_forbidden)
 
     @app.exception_handler(DashboardError)
     async def invalid(_req,exc):
@@ -282,7 +315,7 @@ def register(app,engine,machine,auth):
         return {'contract_version':'dashboard-v1','observed_at':stamp(),'data_mode':'ENGINE_FIXTURE' if getattr(client,'is_fixture',False) else 'ENGINE',
                 'engine':{'state':'ONLINE','policy':engine.policy,'decision_contract':'ASK_V1'},
                 'services':{'gateway':'UNKNOWN','upstream':'UNKNOWN','jev':'CONFIGURED_NOT_TESTED' if authorized else 'DISABLED'},
-                'capabilities':{'ask_history':True,'security_events':True,'alert_ack':False,'raw_context':False},
+                'capabilities':{'ask_history':True,'security_events':True,'alert_ack':False,'raw_context':False,'masked_content_preview':True,'masked_source_preview':True},
                 'retention':{'session_seconds':engine.retention.session_seconds,'history_seconds':engine.retention.history_seconds,'security_seconds':604800},
                 'data_window':{'earliest_available_at':stamp(row[0]) if row[0] is not None else None,'latest_available_at':stamp(row[1]) if row[1] is not None else None}}
 
@@ -299,7 +332,7 @@ def register(app,engine,machine,auth):
         items=projection.filtered(projection.events(start,end),q)
         selected,cursor=projection.page(items,q,limit)
         # Details remain available on the detail route; no source/payload in lists.
-        public=[{k:v for k,v in i.items() if k not in ('sources','checks','timeline','user_request_summary','candidate_summary','ask_history')} for i in selected]
+        public=[{k:v for k,v in i.items() if k not in ('sources','checks','timeline','user_request_summary','candidate_summary','ask_history','explanation','content_preview')} for i in selected]
         return {'scope':'FILTERED_RETAINED_CALLS','generated_at':stamp(),'total':len(items),'items':public,'next_cursor':cursor}
 
     @app.get('/dashboard/v1/events/{event_id}')
@@ -307,7 +340,8 @@ def register(app,engine,machine,auth):
         auth(request,'human','history:read')
         if not re.fullmatch(r'[a-f0-9]{64}',event_id):
             raise DashboardError('EVENT_NOT_FOUND',404)
-        return next((i for i in projection.events(time.time()-604800,time.time()+1) if i['event_id']==event_id),None) or missing()
+        caller = request.headers.get('authorization', '').partition(' ')[2]
+        return next((i for i in projection.events(time.time()-604800,time.time()+1,preview_event=event_id,preview_caller=caller) if i['event_id']==event_id),None) or missing()
 
     @app.get('/dashboard/v1/security')
     async def security(request: Request):

@@ -5,13 +5,6 @@ COPY requirements.txt /opt/requirements.txt
 RUN python -m pip install --no-cache-dir --require-hashes --timeout 20 --retries 1 -r /opt/requirements.txt
 COPY tools/minimal_runtime.py /opt/minimal_runtime.py
 RUN python /opt/minimal_runtime.py
-FROM build AS dev
-COPY requirements-dev.lock /opt/requirements-dev.lock
-RUN python -m pip install --no-cache-dir --require-hashes --timeout 20 --retries 1 -r /opt/requirements-dev.lock
-USER 10001:10001
-WORKDIR /workspace
-CMD ["python", "-c", "import time; time.sleep(86400)"]
-
 FROM scratch AS runtime
 COPY --from=build /rootfs /
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH=/usr/local/bin LD_LIBRARY_PATH=/usr/local/lib SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt

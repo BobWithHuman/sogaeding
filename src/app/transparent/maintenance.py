@@ -29,7 +29,21 @@ ROLE_FILES = frozenset({'ca.pem','control.pem','control.key','storage.key','huma
                         'gateway-client.pem','gateway-client.key','upstream.pem','upstream.key'})
 DATABASES = ('control-data/control.sqlite3','control-data/control.sqlite3.auth',
              'upstream-data/attempts.sqlite3','jev-budget/typesafe-budget.sqlite3')
-SEALED = (('sessions','body'),('turns','body'),('calls','body'),('sources','body'),('transport','body'),('security_events','body'))
+# SQL identifiers are part of complete, reviewed statements, never interpolated.
+SEALED_QUERIES = (
+    ('sessions', 'SELECT rowid,body FROM sessions WHERE body IS NOT NULL',
+     'UPDATE sessions SET body=? WHERE rowid=?'),
+    ('turns', 'SELECT rowid,body FROM turns WHERE body IS NOT NULL',
+     'UPDATE turns SET body=? WHERE rowid=?'),
+    ('calls', 'SELECT rowid,body FROM calls WHERE body IS NOT NULL',
+     'UPDATE calls SET body=? WHERE rowid=?'),
+    ('sources', 'SELECT rowid,body FROM sources WHERE body IS NOT NULL',
+     'UPDATE sources SET body=? WHERE rowid=?'),
+    ('transport', 'SELECT rowid,body FROM transport WHERE body IS NOT NULL',
+     'UPDATE transport SET body=? WHERE rowid=?'),
+    ('security_events', 'SELECT rowid,body FROM security_events WHERE body IS NOT NULL',
+     'UPDATE security_events SET body=? WHERE rowid=?'),
+)
 ROTATION_FILES = ('control/storage.key','control/machine.token','host/machine.token',
                   'control/human.token','host/human.token','control/forward.key','upstream/forward.key')
 
@@ -175,11 +189,11 @@ def _rotate(root):
         db = database(checked(root, DATABASES[0]))
         try:
             db.execute('BEGIN EXCLUSIVE')
-            for table, column in SEALED:
+            for table, select_sql, update_sql in SEALED_QUERIES:
                 if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
                     continue
-                for rowid, body in db.execute('SELECT rowid,'+column+' FROM '+table+' WHERE '+column+' IS NOT NULL').fetchall():
-                    db.execute('UPDATE '+table+' SET '+column+'=? WHERE rowid=?', (after.encrypt(before.decrypt(body)), rowid))
+                for rowid, body in db.execute(select_sql).fetchall():
+                    db.execute(update_sql, (after.encrypt(before.decrypt(body)), rowid))
             for rowid, reason in db.execute('SELECT rowid,reason FROM calls WHERE reason IS NOT NULL').fetchall():
                 value = json.loads(reason)
                 if value.get('format') != 'sealed-decision-context-1':

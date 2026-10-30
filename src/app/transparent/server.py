@@ -434,7 +434,7 @@ def create_app(engine, keys, *, max_body_bytes=131072):
         return {'state':'ACKNOWLEDGED'}
 
     from app.transparent.dashboard import register
-    register(app,engine,machine,auth)
+    register(app,engine,machine,auth,preview_forbidden=(keys['machine'],keys['human']))
     return app
 
 
@@ -475,7 +475,8 @@ def _serve_app(app, runtime=RUNTIME):
                 await asyncio.sleep(10)
                 with app.state.engine.db() as db:
                     app.state.engine.cleanup(db)
-        host = '0.0.0.0' if os.environ.get('WITH_HUMAN_CONTAINER_BOUNDARY') == 'loopback-published' else '127.0.0.1'
+        # Container interfaces serve Docker forwarding; compose publishes only 127.0.0.1.
+        host = '0.0.0.0' if os.environ.get('WITH_HUMAN_CONTAINER_BOUNDARY') == 'loopback-published' else '127.0.0.1'  # nosec B104
         options = dict(host=host, ssl_certfile=str(runtime / "control.pem"), ssl_keyfile=str(runtime / "control.key"),
                        access_log=False, proxy_headers=False, log_level="critical")
         servers = asyncio.gather(uvicorn.Server(uvicorn.Config(public, port=8030, **options)).serve(),

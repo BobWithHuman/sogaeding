@@ -16,6 +16,16 @@ import certifi
 root = Path('/rootfs')
 root.mkdir()
 shutil.copytree('/usr/local', root/'usr/local', symlinks=True)
+# Dependencies are installed in the build stage. The immutable runtime never
+# installs packages; omit the inherited installer and its vulnerable code paths.
+site = root/'usr/local/lib/python3.12/site-packages'
+for path in site.iterdir():
+    if path.name == 'pip' or re.fullmatch(r'pip-[0-9][A-Za-z0-9.]*\.dist-info', path.name):
+        if path.is_symlink() or path.resolve().parent != site.resolve():
+            raise RuntimeError('UNSAFE_INSTALLER_PATH')
+        shutil.rmtree(path)
+for name in ('pip', 'pip3', 'pip3.12'):
+    (root/'usr/local/bin'/name).unlink(missing_ok=True)
 removed = []
 extensions = root/'usr/local/lib/python3.12/lib-dynload'
 for pattern in ('_curses*','readline*','_uuid*','_tkinter*'):
@@ -69,9 +79,12 @@ shutil.copy2(certifi.where(),cert)
 for name in ('tmp','data','home/app','product'):
     (root/name).mkdir(parents=True,exist_ok=True)
     os.chown(root/name,10001,10001)
-os.chmod(root/'tmp',0o1777)
+# Standard sticky temporary directory, not a credential store. Docker tmpfs may
+# inherit this mode with root ownership; 0700 would block the application UID.
+os.chmod(root/'tmp',0o1777)  # nosec B103
 inventory = {'format':'with-human-runtime-closure-1','os_packages':sorted(packages),
              'copied_libraries':[str(p) for p in sorted(needed)],'excluded_extensions':removed,
-             'certificate_store':'certifi bundle; no old distribution CA bundle'}
+             'certificate_store':'certifi bundle; no old distribution CA bundle',
+             'excluded_package_managers':['pip']}
 (root/'runtime-closure.json').write_text(json.dumps(inventory,indent=2)+'\n')
 print(json.dumps(inventory))

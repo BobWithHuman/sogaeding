@@ -1,12 +1,10 @@
 param(
-    [ValidateSet('build','prepare','up','check','test','down','networks')]
+    [ValidateSet('build','prepare','up','check','down','networks')]
     [string]$Mode = 'check',
     [ValidatePattern('^[a-z0-9][a-z0-9-]{0,47}$')]
     [string]$RuntimeName = 'default',
     [ValidateRange(1024,65535)][int]$ControlPort = 8130,
-    [ValidateRange(1024,65535)][int]$GatewayPort = 8140,
-    [string]$ExportPath = '',
-    [switch]$NpmLab
+    [ValidateRange(1024,65535)][int]$GatewayPort = 8140
 )
 $ErrorActionPreference = 'Stop'
 $teamRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -60,15 +58,9 @@ try {
             Invoke-TeamDocker volume create --label ('sogaeding.team=' + $teamProject) $teamVolume
             Invoke-TeamDocker run --rm --read-only --user 0:0 --cap-drop ALL --cap-add CHOWN --network none `
                 --mount "type=volume,source=$teamVolume,target=/team" $teamImage python -c "import os; os.chown('/team',10001,10001)"
-            $teamPrepareExtra=@()
-            $teamPrepareMounts=@()
-            if($NpmLab){
-                $teamPrepareExtra=@('--adapter','npm-lab-1')
-                $teamPrepareMounts=@('--mount',"type=bind,source=$teamRoot/demos,target=/demos,readonly")
-            }
             Invoke-TeamDocker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --network none --tmpfs /tmp `
-                --mount "type=bind,source=$teamRoot/tools,target=/tools,readonly" @teamPrepareMounts --mount "type=volume,source=$teamVolume,target=/team" `
-                $teamImage python /tools/team_runtime.py prepare /team --name $RuntimeName @teamPrepareExtra
+                --mount "type=bind,source=$teamRoot/tools,target=/tools,readonly" --mount "type=volume,source=$teamVolume,target=/team" `
+                $teamImage python /tools/team_runtime.py prepare /team --name $RuntimeName
             New-Item -ItemType Directory -Path $teamRuntime -Force | Out-Null
             @{volume=$teamVolume;root_id=$teamRootId;provider='JEV_EXTERNAL_CONFIGURATION_REQUIRED'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $teamRuntime 'prepared.json') -Encoding utf8
         }
@@ -76,15 +68,6 @@ try {
             Invoke-TeamDocker compose -p $teamProject -f compose.yaml up -d control upstream gateway
         }
         'check' { Invoke-TeamDocker compose -p $teamProject -f compose.yaml run --rm --no-deps check }
-        'test' {
-            Invoke-TeamDocker build --target dev -f Dockerfile -t with-human-dev:local .
-            $teamImage = 'with-human-dev:local'
-            Invoke-TeamDocker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --network none --tmpfs /tmp `
-                --mount "type=bind,source=$teamRoot,target=/workspace,readonly" -w /workspace `
-                -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/workspace/src:/workspace/tests/hookgw:/workspace/tools `
-                -e CONTRACT_DIR=/workspace/docs/mvp/contracts $teamImage python -m pytest -q -p no:cacheprovider `
-                tests/product
-        }
         'down' { Invoke-TeamDocker compose -p $teamProject -f compose.yaml --profile dashboard down }
 
     }

@@ -82,7 +82,7 @@
       <section id="eventsView" class="view hidden">
         <article class="panel table-panel">
           <div class="panel-head"><div><span class="eyebrow">RETAINED EVENTS</span><h2 id="eventHeading">Tool call history</h2></div><span class="record-count" id="eventCount">0 records</span></div>
-          <div class="table-wrap"><table><thead><tr><th>TIME</th><th>TOOL / TARGET</th><th>DECISION</th><th>EXECUTION</th><th>ROUTING</th><th></th></tr></thead><tbody id="eventRows"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>시각</th><th>도구 / 대상</th><th>최초 → 최종 판정</th><th>실행 결과</th><th>판정 이유 / 검사 경로</th><th></th></tr></thead><tbody id="eventRows"></tbody></table></div>
           <div class="pagination"><span id="pageInfo">0 records</span><div><button id="prev">← Previous</button><button id="next">Next →</button></div></div>
         </article>
       </section>
@@ -96,7 +96,7 @@
     </main>
   </div>
 
-  <dialog id="detail"><div class="dialog-head"><div><span class="eyebrow">EVENT INSPECTOR</span><h2>Tool call detail</h2></div><button id="close" aria-label="상세 닫기">×</button></div><div id="detailBody"></div></dialog>
+  <dialog id="detail"><div class="dialog-head"><div><span class="eyebrow">판정 근거와 실행 결과</span><h2>도구 호출 상세</h2></div><button id="close" aria-label="상세 닫기">×</button></div><div id="detailBody"></div></dialog>
   <script src="/app.js" defer></script>
 </body>
 </html>

@@ -186,8 +186,11 @@ class Engine:
         db.execute("DELETE FROM audit WHERE id NOT IN (SELECT id FROM audit ORDER BY id DESC LIMIT 4096)")
 
     def forget(self, db, session):
-        counts = {table: db.execute("SELECT count(*) FROM " + table + " WHERE session=?", (session,)).fetchone()[0]
-                  for table in ("calls", "sources", "turns")}
+        counts = {
+            "calls": db.execute("SELECT count(*) FROM calls WHERE session=?", (session,)).fetchone()[0],
+            "sources": db.execute("SELECT count(*) FROM sources WHERE session=?", (session,)).fetchone()[0],
+            "turns": db.execute("SELECT count(*) FROM turns WHERE session=?", (session,)).fetchone()[0],
+        }
         existed = db.execute("SELECT 1 FROM sessions WHERE id=?", (session,)).fetchone()
         db.execute("DELETE FROM closed_sessions WHERE id=?", (session,))
         db.execute("INSERT OR IGNORE INTO tombstones SELECT id,hash,state FROM calls WHERE session=? AND state='UNKNOWN'", (session,))

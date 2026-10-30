@@ -94,7 +94,11 @@ def overrides(root, host, python, *, mcp_only=False):
         # Product files live in Docker; the host shell cannot access them.
         # Hide that unsupported route for this child only. Hooks still reject
         # every other unenrolled native tool; sandbox/approval remain intact.
-        values += ["-c", "features.shell_tool=false"]
+        values += ["-c", "features.shell_tool=false",
+                   "-c", "features.apps=false", "-c", "features.plugins=false",
+                   "-c", "mcp_servers.with_human.required=true",
+                   "-c", "mcp_servers.with_human.startup_timeout_sec=30",
+                   "-c", "mcp_optional_startup_grace_ms=0"]
     for event in ("UserPromptSubmit", "PreToolUse", "PostToolUse"):
         handler = "{type=\"command\",command=" + json.dumps(command) + ",command_windows=" + json.dumps("& " + windows_command) + ",timeout=120}"
         values += ["-c", "hooks." + event + "=[{hooks=[" + handler + "]}]"]

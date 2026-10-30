@@ -106,7 +106,8 @@ def main():
     except (ValueError,OSError):
         raise SystemExit('LOCAL_DASHBOARD_CONFIGURATION_REQUIRED') from None
     print('Local dashboard: http://127.0.0.1:'+str(args.port),flush=True)
-    host='0.0.0.0' if os.environ.get('WITH_HUMAN_CONTAINER_BOUNDARY')=='loopback-published' else '127.0.0.1'
+    # Container-only opt-in; compose publishes the read-only relay on 127.0.0.1.
+    host='0.0.0.0' if os.environ.get('WITH_HUMAN_CONTAINER_BOUNDARY')=='loopback-published' else '127.0.0.1'  # nosec B104
     uvicorn.run(app,host=host,port=args.port,access_log=False,proxy_headers=False,log_level='warning')
 
 
