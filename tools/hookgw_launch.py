@@ -1,6 +1,5 @@
 """Launch user's normal interactive Codex with scoped overlays, no prompt input."""
 import argparse
-import importlib.util
 import json
 import os
 import re
@@ -8,6 +7,15 @@ import shlex
 import subprocess
 import tomllib
 from pathlib import Path
+
+import sys
+
+# Explicit sibling import also works under Python -I; restore the search path.
+sys.path.insert(0, str(Path(__file__).absolute().parent))
+try:
+    from trusted_paths import load_helper, executable_path
+finally:
+    sys.path.pop(0)
 
 API_PROVIDER = "with_human_openai_api"
 API_BASE = "https://api.openai.com/v1"
@@ -23,18 +31,11 @@ class Once(argparse.Action):
         setattr(namespace, self.dest, values)
 
 
-def trusted_helper(name):
-    spec = importlib.util.spec_from_file_location("with_human_" + name, Path(__file__).with_name(name + ".py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+trusted_helper = load_helper
 
 
 def trusted_send():
-    spec = importlib.util.spec_from_file_location("with_human_trusted_hook", Path(__file__).with_name("hookgw_hook.py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.send
+    return load_helper("hookgw_hook").send
 
 
 def check_conflicts(root, args, api=False, strict_product=False):
@@ -152,6 +153,7 @@ def main():
         p.error("Repeated --manual-review is not permitted")
     if opts.manual_review and not (opts.api and opts.jev_rules):
         p.error("--manual-review requires explicit --api --jev-rules")
+    opts.exe = str(executable_path(opts.exe))
     root = opts.root.resolve()
     if Path.cwd().resolve() != root:
         raise SystemExit("Enrolled workspace required")

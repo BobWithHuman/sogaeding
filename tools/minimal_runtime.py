@@ -44,7 +44,7 @@ for path in elfs:
     # Resolve against the original builder paths; wheel RUNPATH entries are
     # sometimes absolute. The output tree receives the same /usr/local layout.
     original = Path('/')/path.relative_to(root)
-    result = subprocess.run(['ldd', str(original)], capture_output=True, text=True, check=False)
+    result = subprocess.run(['/usr/bin/ldd', str(original)], capture_output=True, text=True, check=False)
     for line in result.stdout.splitlines():
         if 'not found' in line:
             raise RuntimeError('MISSING_RUNTIME_LIBRARY:'+str(original)+':'+line.strip())

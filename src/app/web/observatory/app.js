@@ -4,6 +4,7 @@
 
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (value) => String(value ?? '—').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const finiteCount = (value) => typeof value==='number'&&Number.isFinite(value)?Math.max(0,value):0;
 const formatNumber = (value) => value == null ? '—' : Number(value).toLocaleString('ko-KR');
 const formatTime = (value, includeDate = true) => value ? new Date(value).toLocaleString('ko-KR', {timeZone:'Asia/Seoul', ...(includeDate ? {} : {hour:'2-digit', minute:'2-digit'})}) : '—';
 const decisionBadge = (value) => `<span class="badge ${['ALLOW','DENY','ASK'].includes(value) ? value : 'UNKNOWN'}">${escapeHtml(value)}</span>`;
@@ -120,13 +121,28 @@ function renderReviewBrief(){
 
 function renderMetrics(){
   const s=state.summary,p=state.previousSummary;
-  const pending=(s.asks.ISSUED||0)+(s.asks.PRESENTED||0);
+  const pending=finiteCount(s.asks.ISSUED)+finiteCount(s.asks.PRESENTED);
   const cards=[['Total calls',s.total_calls,p?.total_calls,'선택 기간의 도구 실행 후보','var(--blue)',''],['Allowed',s.effective_decisions.ALLOW,p?.effective_decisions.ALLOW,'최종 허용 판정','var(--green)',''],['Denied',s.effective_decisions.DENY,p?.effective_decisions.DENY,'최종 거부 판정','var(--red)',''],['Human review',s.initial_decisions.ASK,p?.initial_decisions.ASK,pending+'건 사용자 응답 대기','var(--yellow)',pending?'attention':'']];
-  $('metrics').innerHTML=cards.map(([label,value,previous,note,color,klass])=>`<article class="metric ${klass}" style="--metric-color:${color}"><span class="metric-trend">${trend(value,previous)}</span><span class="metric-label">${label}</span><strong class="metric-value">${formatNumber(value)}</strong><span class="metric-note">${note}</span></article>`).join('');
+  $('metrics').innerHTML=cards.map(([label,value,previous,note,color,klass])=>`<article class="metric ${klass}" style="--metric-color:${color}"><span class="metric-trend">${trend(value,previous)}</span><span class="metric-label">${label}</span><strong class="metric-value">${formatNumber(value)}</strong><span class="metric-note">${escapeHtml(note)}</span></article>`).join('');
 }
 function renderChart(){const series=state.summary.series;if(!series.length){$('chart').innerHTML='<div class="empty">선택한 기간에 판정 데이터가 없습니다.</div>';return;}const chart=$('chart'),style=getComputedStyle(chart),width=Math.max(320,chart.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight)),height=Math.max(180,chart.clientHeight-parseFloat(style.paddingTop)-parseFloat(style.paddingBottom)),pad={x:38,y:18,bottom:32},max=Math.max(1,...series.flatMap(item=>[item.initial_ALLOW||0,item.initial_DENY||0,item.initial_ASK||0]));const plotWidth=width-pad.x-16;const slot=plotWidth/Math.max(series.length,7);const groupWidth=Math.min(34,slot*.64);const barWidth=Math.max(5,(groupWidth-6)/3);const base=height-pad.bottom;const y=(value)=>base-(value/max*(height-pad.y-pad.bottom));const steps=Math.min(4,max);let grid='';for(let i=0;i<=steps;i++){const gy=pad.y+i*(height-pad.y-pad.bottom)/steps;grid+=`<line class="grid-line" x1="${pad.x}" y1="${gy}" x2="${width-12}" y2="${gy}"/><text class="axis-value" x="5" y="${gy+3}">${Math.round(max*(steps-i)/steps)}</text>`;}const offset=(plotWidth-slot*series.length)/2;const labelEvery=Math.max(1,Math.ceil(series.length/8));const bars=series.map((item,i)=>{const start=pad.x+offset+i*slot+(slot-groupWidth)/2;const values=[['initial_ALLOW','bar-allow','ALLOW'],['initial_DENY','bar-deny','DENY'],['initial_ASK','bar-ask','ASK']];const rects=values.map(([key,klass],j)=>{const top=y(item[key]||0);return `<rect class="${klass}" x="${start+j*(barWidth+3)}" y="${top}" width="${barWidth}" height="${Math.max(0,base-top)}" rx="2"/>`;}).join('');const incident=(item.initial_ASK||item.initial_DENY)?`<circle class="incident-marker" cx="${start+groupWidth/2}" cy="${Math.max(8,y(Math.max(item.initial_ASK||0,item.initial_DENY||0))-7)}" r="3"/>`:'';const label=i%labelEvery===0||i===series.length-1?`<text class="time-label" x="${start+groupWidth/2}" y="${height-7}" text-anchor="middle">${escapeHtml(formatTime(item.bucket_start,false))}</text>`:'';const title=`${formatTime(item.bucket_start)} · ALLOW ${item.initial_ALLOW||0} · DENY ${item.initial_DENY||0} · ASK ${item.initial_ASK||0} · 클릭하여 사건 보기`;return `<g class="chart-bucket" tabindex="0" role="button" data-bucket="${escapeHtml(item.bucket_start)}"><title>${escapeHtml(title)}</title>${rects}${incident}${label}</g>`;}).join('');chart.innerHTML=`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">${grid}${bars}</svg>`;}
 function renderServices(){const status=state.status;const values=[['Control engine',status.engine.state],['Gateway',status.services.gateway],['Upstream',status.services.upstream],['Jev analysis',status.services.jev],['Policy',status.engine.policy]];$('services').innerHTML=values.map(([name,value])=>{const good=['ONLINE','CONFIGURED'].includes(value);const warn=value==='UNKNOWN'||String(value).includes('NOT_TESTED');return `<div class="service"><span class="service-name"><i class="state-icon ${good?'good':warn?'warn':''}"></i>${escapeHtml(name)}</span><span class="service-state">${escapeHtml(value)}</span></div>`;}).join('');}
-function renderDistribution(){const s=state.summary,values=s.effective_decisions,total=Math.max(1,s.total_calls);const colors={ALLOW:'var(--green)',DENY:'var(--red)',ASK:'var(--yellow)',UNKNOWN:'var(--dim)'};$('distribution').innerHTML=`<div class="stack">${Object.entries(values).map(([name,value])=>`<div class="bar-row"><span>${name}</span><div class="bar-track"><div class="bar-fill" style="width:${value/total*100}%;background:${colors[name]}"></div></div><strong>${formatNumber(value)}</strong></div>`).join('')}</div>`;}
+function renderDistribution(){
+  const summary=state.summary||{}, values=summary.effective_decisions||{};
+  const total=Math.max(1,finiteCount(summary.total_calls));
+  const colors={ALLOW:'var(--green)',DENY:'var(--red)',ASK:'var(--yellow)',UNKNOWN:'var(--dim)'};
+  const stack=document.createElement('div');stack.className='stack';
+  for(const name of Object.keys(colors)){
+    const value=finiteCount(values[name]);const row=document.createElement('div');row.className='bar-row';
+    const label=document.createElement('span');label.textContent=name;
+    const track=document.createElement('div');track.className='bar-track';
+    const fill=document.createElement('div');fill.className='bar-fill';
+    fill.style.width=`${Math.min(100,value/total*100)}%`;fill.style.background=colors[name];
+    const count=document.createElement('strong');count.textContent=formatNumber(value);
+    track.append(fill);row.append(label,track,count);stack.append(row);
+  }
+  $('distribution').replaceChildren(stack);
+}
 function renderAskPipeline(){const asks=state.summary.asks;$('askPipeline').innerHTML=`<div class="pipeline">${Object.entries(askLabels).map(([key,label])=>`<div class="pipeline-row ${asks[key]?'active-stage':''}"><span>${label}</span><strong>${formatNumber(asks[key])}</strong></div>`).join('')}</div>`;}
 function renderLedger(){const j=state.summary.jev;const limit=j.unlimited?'Unlimited':formatNumber(j.request_limit);$('jevLedger').innerHTML=`<div class="ledger"><div class="pipeline-row"><span>Status</span><strong>${escapeHtml(j.status)}</strong></div><div class="ledger-row"><span>API requests</span><strong>${formatNumber(j.requests)} / ${limit}</strong></div><div class="ledger-row"><span>Input tokens</span><strong>${formatNumber(j.input_tokens_actual)}</strong></div><div class="ledger-row"><span>Output tokens</span><strong>${formatNumber(j.output_tokens_actual)}</strong></div><div class="ledger-row"><span>Reserved input</span><strong>${formatNumber(j.input_tokens_reserved)}</strong></div></div>`;}
 function emptyRow(cols,message='선택한 조건에 해당하는 기록이 없습니다.'){return `<tr><td colspan="${cols}"><div class="empty">${escapeHtml(message)}</div></td></tr>`;}

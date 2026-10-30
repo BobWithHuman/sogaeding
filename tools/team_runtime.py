@@ -7,9 +7,16 @@ import os
 import re
 import secrets
 import shutil
-import sys
 import time
 from pathlib import Path
+
+# Explicit sibling import also works under Python -I; restore the search path.
+import sys
+sys.path.insert(0, str(Path(__file__).absolute().parent))
+try:
+    from trusted_paths import PUBLIC_CERTIFICATES, write_new_private
+finally:
+    sys.path.pop(0)
 
 import httpx
 from prepare_tls import generate
@@ -66,7 +73,7 @@ def prepare(root, name):
     ):
         value = secrets.token_urlsafe(48)
         for role in destinations:
-            (target / role / name).write_text(value, encoding="ascii")
+            write_new_private(target / role / name, value)
     grant = {
         "workspace": "/files",
         "tools": {"native": [], "mcp": ["read_file", "write_file"]},
@@ -82,7 +89,7 @@ def prepare(root, name):
     )
     for path in target.rglob("*"):
         if path.is_file():
-            os.chmod(path, 0o644 if path.suffix == ".pem" else 0o600)
+            os.chmod(path, 0o644 if path.name in PUBLIC_CERTIFICATES else 0o600)
     # Roles already have their own required files. Do not retain a second copy
     # of every token/private key or the unused CA signing key in staging.
     if staging.is_symlink() or not staging.resolve().is_relative_to(target):

@@ -6,7 +6,7 @@ import json
 import os
 import re
 import secrets
-import sqlite3
+from app.private_files import private_connect
 import ssl
 import time
 from pathlib import Path
@@ -110,7 +110,7 @@ def create_app(engine, keys, *, max_body_bytes=131072):
         path = Path(app.state.auth_audit.path)
         failures = 0
         if path.exists():
-            with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=1) as db:
+            with private_connect(path, read_only=True, timeout=1) as db:
                 failures = db.execute("SELECT coalesce(sum(count),0) FROM auth_failures WHERE surface=? AND status IN (401,403) AND last_at>?",
                                       (request.state.auth_surface, time.time()-60)).fetchone()[0]
         if not authenticated:

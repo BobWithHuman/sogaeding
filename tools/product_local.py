@@ -8,8 +8,15 @@ import re
 import shutil
 import stat
 import subprocess
-import sys
 from pathlib import Path
+
+# Explicit sibling import also works under Python -I; restore the search path.
+import sys
+sys.path.insert(0, str(Path(__file__).absolute().parent))
+try:
+    from trusted_paths import executable_path, read_local_file
+finally:
+    sys.path.pop(0)
 
 IMAGE = "with-human-engine:local"
 ROLES = ("ca.pem", "machine.id", "machine.token", "human.token")
@@ -58,14 +65,8 @@ def write_private(path, value):
 
 
 def read_private(path):
-    no_links(path)
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-    with os.fdopen(fd, "rb") as stream:
-        info = os.fstat(stream.fileno())
-        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or info.st_mode & 0o077 or info.st_nlink != 1 or info.st_size > 65536):
-            raise ValueError("PRIVATE_FILE_REQUIRED_CHMOD_600")
-        return stream.read(65537)
+    private_directory(path.absolute().parent)
+    return read_local_file(path)
 
 
 def port(value):
@@ -126,7 +127,9 @@ class Product:
         return result.stdout if capture else ""
 
     def docker(self, *args, **kwargs):
-        return self.run(["docker", *args], **kwargs)
+        if not hasattr(self, "_docker_executable"):
+            self._docker_executable = executable_path("docker")
+        return self.run([self._docker_executable, *args], **kwargs)
 
     def mount(self, source, target, *, volume=False, readonly=False):
         if any(c in str(source) for c in (",", "\n", "\r", "\x00")):

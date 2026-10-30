@@ -6,6 +6,14 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+# Explicit sibling import also works under Python -I; restore the search path.
+import sys
+sys.path.insert(0, str(Path(__file__).absolute().parent))
+try:
+    from trusted_paths import PUBLIC_CERTIFICATES, write_new_private
+finally:
+    sys.path.pop(0)
+
 from cryptography import x509
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes, serialization
@@ -53,16 +61,16 @@ def generate(target: Path, extra_servers=(), extra_clients=()):
             cert = cert.add_extension(x509.SubjectAlternativeName(sans), False)
         (target / f"{label}.pem").write_bytes(cert.sign(ca_key, hashes.SHA256()).public_bytes(
             serialization.Encoding.PEM))
-        (target / f"{label}.key").write_bytes(key.private_bytes(
+        write_new_private(target / f"{label}.key", key.private_bytes(
             serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
             serialization.NoEncryption()))
     for label, value in [("human.token", secrets.token_urlsafe(48)),
                          ("service.token", secrets.token_urlsafe(48)),
                          ("storage.key", Fernet.generate_key().decode()),
                          ("effects-storage.key", Fernet.generate_key().decode())]:
-        (target / label).write_text(value, encoding="ascii")
+        write_new_private(target / label, value)
     for item in target.iterdir():
-        os.chmod(item, 0o600 if item.suffix != ".pem" else 0o644)
+        os.chmod(item, 0o600 if item.name not in PUBLIC_CERTIFICATES else 0o644)
     print("Application PKI prepared; CA 7 days, leaf 2 days; no global trust changed.")
 
 

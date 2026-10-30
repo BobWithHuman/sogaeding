@@ -11,7 +11,7 @@ import json
 import os
 import secrets
 import shutil
-import sqlite3
+from app.private_files import open_private_database
 import stat
 import tempfile
 import time
@@ -106,7 +106,7 @@ def offline(root):
 def database(path):
     if path.is_symlink() or not path.is_file():
         raise ValueError('RUNTIME_DATABASE_REQUIRED')
-    db = sqlite3.connect(path, isolation_level=None, timeout=1)
+    db = open_private_database(path, isolation_level=None, timeout=1)
     db.execute('PRAGMA secure_delete=ON')
     if db.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
         db.close()
@@ -290,7 +290,7 @@ def make_backup(root, destination, key_file, ttl=86400):
                 with tempfile.TemporaryDirectory() as staging:
                     copy = Path(staging)/'snapshot.sqlite3'
                     source = database(path)
-                    target = sqlite3.connect(copy)
+                    target = open_private_database(copy)
                     try:
                         source.backup(target)
                     finally:

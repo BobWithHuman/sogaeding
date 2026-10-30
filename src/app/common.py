@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from app.private_files import read_private
 from cryptography.fernet import Fernet
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -47,7 +48,7 @@ def action(tool, args, backend="demo.v1"):
 
 
 def secret_file(label):
-    return (RUNTIME / label).read_text(encoding="ascii").strip()
+    return read_private(RUNTIME / label).decode("ascii").strip()
 
 
 def cipher():

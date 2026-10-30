@@ -1,26 +1,31 @@
 """JSON-lines stdio ↔ actual TLS agentgateway MCP transport; no retry or prompt input."""
 import argparse
-import importlib.util
 import json
 import os
 import queue
 import re
 import ssl
-import sys
 import threading
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+# Explicit sibling import also works under Python -I; restore the search path.
+import sys
+sys.path.insert(0, str(Path(__file__).absolute().parent))
+try:
+    from trusted_paths import load_helper
+finally:
+    sys.path.pop(0)
 from urllib.parse import urlsplit
 from uuid import uuid4
 
 
+
+
 def send(host, endpoint, body):
-    spec = importlib.util.spec_from_file_location("with_human_trusted_hook", Path(__file__).with_name("hookgw_hook.py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.send(host, endpoint, body)
+    return load_helper("hookgw_hook").send(host, endpoint, body)
 
 
 STAGES = {"initialize": "INITIALIZE", "notifications/initialized": "INITIALIZED", "tools/list": "TOOLS_LIST", "tools/call": "TOOLS_CALL"}
@@ -202,7 +207,13 @@ def diagnostic(stage, code, details=None):
     value = {"server": "with_human", "stage": stage if stage in {*STAGES.values(), "BOOTSTRAP", "INPUT"} else "INPUT",
              "code": code if code in DIAGNOSTIC_CODES else "ADAPTER_UNAVAILABLE"}
     if details:
-        value.update(details)
+        if isinstance(details, dict):
+            reason = details.get("reason")
+            if isinstance(reason, str) and reason in AUTH_REASONS | STATE_REASONS | {"FORWARD_SNAPSHOT_STALE"}:
+                value["reason"] = reason
+            call_ref = details.get("call_ref")
+            if isinstance(call_ref, str) and re.fullmatch(r"[a-f0-9]{64}", call_ref):
+                value["call_ref"] = call_ref
     sys.stderr.write("WITH_HUMAN_MCP_DIAGNOSTIC " + json.dumps(value) + "\n")
     sys.stderr.flush()
 

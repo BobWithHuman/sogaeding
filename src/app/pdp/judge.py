@@ -3,7 +3,7 @@
 import asyncio
 import json
 import os
-import sqlite3
+from app.private_files import private_connect
 import time
 from pathlib import Path
 
@@ -36,8 +36,7 @@ class OpenAIJudge:
         self.usage = []
 
     def claim(self, analysis_id, view):
-        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.path, timeout=1) as db:
+        with private_connect(self.path, timeout=1) as db:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS attempts (analysis_id TEXT, view TEXT, started REAL, usage TEXT, status TEXT, PRIMARY KEY(analysis_id,view))"
             )
@@ -52,7 +51,7 @@ class OpenAIJudge:
     def budget_summary(self):
         if not Path(self.path).exists():
             return {"requests_attempted": 0, "remaining": 24, "limit": 24}
-        with sqlite3.connect(self.path, timeout=1) as db:
+        with private_connect(self.path, timeout=1) as db:
             exists = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='attempts'").fetchone()
             rows = db.execute("SELECT status,usage FROM attempts").fetchall() if exists else []
         totals = {"input_tokens": 0, "output_tokens": 0}
@@ -69,7 +68,7 @@ class OpenAIJudge:
             "output_tokens": usage.output_tokens if usage else None,
             "elapsed_ms": round(elapsed * 1000),
         }
-        with sqlite3.connect(self.path, timeout=1) as db:
+        with private_connect(self.path, timeout=1) as db:
             db.execute(
                 "UPDATE attempts SET usage=?,status=? WHERE analysis_id=? AND view=?",
                 (canonical(safe), status, analysis_id, view),

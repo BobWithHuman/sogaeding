@@ -56,6 +56,23 @@ function Protect-ProductDirectory([string]$Path){
         if($productRule.AccessControlType -eq 'Allow' -and $productAllowed -notcontains $productRule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value){throw 'Unexpected client credential access rule.'}
     }
 }
+function Assert-PrivateProviderKey([string]$Path){
+    Assert-ProductPath ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Path)))
+    $productKeyItem=Get-Item -LiteralPath $Path -ErrorAction Stop
+    if($productKeyItem.PSIsContainer -or ($productKeyItem.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'A regular external Jev key file is required.'}
+    $productAllowed=@([Security.Principal.WindowsIdentity]::GetCurrent().User.Value,'S-1-5-18','S-1-5-32-544')
+    $productParentAcl=Get-Acl -LiteralPath $productKeyItem.DirectoryName
+    if($productAllowed -notcontains $productParentAcl.GetOwner([Security.Principal.SecurityIdentifier]).Value){throw 'External Jev key directory has an untrusted owner.'}
+    $productWriteRights=[Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
+    foreach($productRule in $productParentAcl.Access){
+        if($productRule.AccessControlType -eq 'Allow' -and ($productRule.FileSystemRights -band $productWriteRights) -and $productAllowed -notcontains $productRule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value){throw 'External Jev key directory permits changes by another principal.'}
+    }
+    $productKeyAcl=Get-Acl -LiteralPath $productKeyItem.FullName
+    if($productAllowed -notcontains $productKeyAcl.GetOwner([Security.Principal.SecurityIdentifier]).Value){throw 'External Jev key owner must be the current user, SYSTEM or Administrators.'}
+    foreach($productRule in $productKeyAcl.Access){
+        if($productRule.AccessControlType -eq 'Allow' -and $productAllowed -notcontains $productRule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value){throw 'External Jev key ACL grants access to another principal; restrict its ACL before continuing.'}
+    }
+}
 function Assert-PrivateClient {
     $productAllowed=@([Security.Principal.WindowsIdentity]::GetCurrent().User.Value,'S-1-5-18','S-1-5-32-544')
     foreach($productItem in @((Get-Item -LiteralPath $productClient)) + @(Get-ChildItem -LiteralPath $productClient -Recurse -Force)){
@@ -118,7 +135,7 @@ try {
             if($JevKeyFile -match '^/(?:run/desktop/mnt/host|host_mnt)/([a-z])/(.+)$'){$JevKeyFile=$Matches[1]+':/'+$Matches[2]}
         }
         $productKey=Get-Item -LiteralPath $JevKeyFile -ErrorAction Stop
-        if($productKey.PSIsContainer -or ($productKey.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'A regular external Jev key file is required.'}
+        Assert-PrivateProviderKey $productKey.FullName
         if(-not (Test-Path -LiteralPath $productPolicyFile -PathType Leaf)){throw 'Existing Jev policy file not visible. No policy or usage was reset.'}
         $productBundleText=@(& docker run --rm --log-driver none --pull never --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp `
             -e PYTHONDONTWRITEBYTECODE=1 --mount "type=bind,source=$productRoot/tools,target=/tools,readonly" `
@@ -151,7 +168,7 @@ try {
         if(($null -eq $ApproveJevRequests) -ne ($null -eq $ApproveJevInputTokens)){throw 'Supply both optional legacy limits or omit both for unlimited usage.'}
         if((Test-Path -LiteralPath $productRuntime) -or (Test-Path -LiteralPath $productClient)){throw 'Existing runtime preserved; choose a new RuntimeName.'}
         $productKey=(Get-Item -LiteralPath $JevKeyFile -ErrorAction Stop)
-        if($productKey.PSIsContainer -or ($productKey.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'A regular external Jev key file is required.'}
+        Assert-PrivateProviderKey $productKey.FullName
         & (Join-Path $PSScriptRoot 'team_dev.ps1') -Mode build
         if($LASTEXITCODE -ne 0){throw 'Product image build failed.'}
         & (Join-Path $PSScriptRoot 'team_dev.ps1') -Mode prepare -RuntimeName $RuntimeName -ControlPort $ControlPort -GatewayPort $GatewayPort
@@ -196,6 +213,7 @@ try {
     }
     if($Mode -ne 'down'){Assert-PrivateClient}
     $productConnection=Get-Content -LiteralPath $productSettings -Raw | ConvertFrom-Json
+    if($Mode -eq 'up'){Assert-PrivateProviderKey $productConnection.key_file}
     $env:SOGAEDING_JEV_KEY_FILE=$productConnection.key_file
     $env:SOGAEDING_JEV_POLICY_FILE=$productPolicyFile
     if($productConnection.adapter){throw 'This deployment supports the enrolled file adapter only.'}

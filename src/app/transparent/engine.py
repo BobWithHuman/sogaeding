@@ -6,6 +6,7 @@ Only authenticated adapters may write events; model-supplied provenance is ignor
 import asyncio
 import json
 import secrets
+from app.private_files import private_connect
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -75,7 +76,6 @@ class Engine:
         self.retention = RetentionPolicy.from_env()
         self.policy = policy_router.policy if policy_router else POLICY
         self.grant_hash = digest(canonical({"grant": self.grant, "policy": self.policy} if policy_router else self.grant))
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
         with self.db() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, machine TEXT, turn TEXT, body BLOB);
@@ -147,7 +147,7 @@ class Engine:
 
     @contextmanager
     def db(self):
-        with sqlite3.connect(self.path, timeout=3, isolation_level=None) as db:
+        with private_connect(self.path, timeout=3, isolation_level=None) as db:
             db.row_factory = sqlite3.Row
             db.execute("PRAGMA secure_delete=ON")
             db.execute("BEGIN IMMEDIATE")

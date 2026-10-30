@@ -1,29 +1,27 @@
 """Codex CLI connector for the current product; start is always user initiated."""
 import argparse
 import base64
-import importlib.util
 import json
 import os
 import re
-import shutil
 import ssl
 import subprocess
-import sys
 import time
 import urllib.error
 from pathlib import Path
+
+# Explicit sibling import also works under Python -I; restore the search path.
+import sys
+sys.path.insert(0, str(Path(__file__).absolute().parent))
+try:
+    from trusted_paths import load_helper, executable_path, PUBLIC_CERTIFICATES, read_local_file, write_new_private
+finally:
+    sys.path.pop(0)
 from urllib.parse import urlsplit
 
 
-def sibling(name):
-    path = Path(__file__).with_name(name + ".py")
-    if path.is_symlink():
-        raise ValueError("CONNECTOR_LINK_REJECTED")
-    spec = importlib.util.spec_from_file_location("product_" + name, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
+sibling = load_helper
 
 send = sibling("hookgw_hook").send
 launcher = sibling("hookgw_launch")
@@ -37,7 +35,7 @@ def export_bundle(runtime, *, include_metadata=False):
     source = runtime / "host"
     if source.is_symlink() or any(not (source / name).is_file() or (source / name).is_symlink() for name in ROLE_FILES):
         raise ValueError("HOST_CREDENTIALS_UNAVAILABLE")
-    values = {name: (source / name).read_bytes() for name in ROLE_FILES}
+    values = {name: read_local_file(source / name, public=name in PUBLIC_CERTIFICATES) for name in ROLE_FILES}
     if any(not 1 <= len(value) <= 8192 for value in values.values()):
         raise ValueError("HOST_CREDENTIALS_UNAVAILABLE")
     roles = {name: base64.b64encode(value).decode("ascii") for name, value in values.items()}
@@ -63,12 +61,12 @@ def export_host(runtime, destination, workspace, control_port, gateway_port):
         raise ValueError("HOST_CREDENTIALS_UNAVAILABLE")
     destination.mkdir(mode=0o700)
     for name in ROLE_FILES:
-        shutil.copyfile(source / name, destination / name)
-        os.chmod(destination / name, 0o644 if name.endswith(".pem") else 0o600)
+        write_new_private(destination / name, read_local_file(source / name, public=name in PUBLIC_CERTIFICATES))
+        os.chmod(destination / name, 0o644 if name in PUBLIC_CERTIFICATES else 0o600)
     profile = {"format": "product-codex-1", "workspace": workspace, "engine_workspace": "/files",
                "mcp_only": True, "control_url": f"https://127.0.0.1:{control_port}",
                "gateway_url": f"https://127.0.0.1:{gateway_port}/mcp"}
-    (destination / "profile.json").write_text(json.dumps(profile), encoding="utf-8")
+    write_new_private(destination / "profile.json", json.dumps(profile))
     os.chmod(destination / "profile.json", 0o600)
     print(json.dumps({"state": "CLIENT_PREPARED", "model_requests": 0, "personal_settings_changed": False}))
 
@@ -77,7 +75,7 @@ def profile_for(host):
     path = host / "profile.json"
     if host.is_symlink() or path.is_symlink():
         raise ValueError("PROFILE_LINK_REJECTED")
-    profile = json.loads(path.read_text(encoding="utf-8"))
+    profile = json.loads(read_local_file(path).decode("utf-8"))
     if (profile.get("format") != "product-codex-1" or profile.get("mcp_only") is not True
             or profile.get("engine_workspace") != "/files"):
         raise ValueError("PRODUCT_PROFILE_REQUIRED")
@@ -118,6 +116,7 @@ def history(host):
 
 def product_overrides(project, host, executable):
     """Expose only enrolled product MCP tools in this child, not personal MCPs."""
+    executable = executable_path(executable)
     flags = launcher.overrides(project, host, sys.executable, mcp_only=True)
 
     def catalog(current):
@@ -163,6 +162,7 @@ def product_overrides(project, host, executable):
 
 
 def start(project, host, executable):
+    executable = executable_path(executable)
     profile = profile_for(host)
     workspace = Path(profile["workspace"]).resolve()
     if Path.cwd().resolve() != workspace:
@@ -191,6 +191,7 @@ def start(project, host, executable):
 
 def cli_check(project, host, executable):
     """Parse the installed CLI configuration without a session or model call."""
+    executable = executable_path(executable)
     profile = profile_for(host)
     workspace = Path(profile["workspace"]).resolve()
     if Path.cwd().resolve() != workspace:

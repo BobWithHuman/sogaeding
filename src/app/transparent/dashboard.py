@@ -5,6 +5,7 @@ import hmac
 import json
 import re
 import secrets
+from app.private_files import private_connect, read_private
 import sqlite3
 import time
 from collections import Counter
@@ -141,7 +142,7 @@ class Projection:
                 path = Path(settings.key_path)
                 if path.is_symlink() or not path.is_file() or path.stat().st_size > 4096:
                     return None
-                key = path.read_text(encoding='ascii').strip()
+                key = read_private(path, 4096).decode('ascii').strip()
                 if not 16 <= len(key) <= 2048 or any(c.isspace() for c in key):
                     return None
                 forbidden.append(key)
@@ -261,7 +262,7 @@ class Projection:
         if path is None or Path(path).is_symlink() or not Path(path).is_file():
             return value
         try:
-            with sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro',uri=True,timeout=1) as db:
+            with private_connect(path, read_only=True, timeout=1) as db:
                 rows=db.execute('SELECT input_reserved,usage FROM jev_attempts').fetchall()
             value.update(requests=len(rows),input_tokens_reserved=sum(r[0] for r in rows),request_limit=settings.request_limit,
                          requests_remaining=None if settings.request_limit is None else max(0,settings.request_limit-len(rows)),input_reservation_limit=settings.input_token_limit,

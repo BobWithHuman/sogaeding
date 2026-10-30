@@ -11,6 +11,7 @@ import asyncio
 import math
 import re
 import secrets
+from app.private_files import private_connect, read_private
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -274,7 +275,7 @@ class JevClient:
             path = Path(self.settings.key_path)
             if path.is_symlink() or not path.is_file() or path.stat().st_size > 4096:
                 raise OSError()
-            key = path.read_text(encoding="ascii").strip()
+            key = read_private(path, 4096).decode("ascii").strip()
             if not 16 <= len(key) <= 2048 or any(c.isspace() for c in key):
                 raise OSError()
             return key
@@ -290,12 +291,11 @@ class JevClient:
     def _claim(self, analysis_id, view):
         settings = self.settings
         path = Path(settings.budget_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
         binding = canonical({"provider": "typesafe", "model": MODEL, "policy_id": settings.policy_id,
                              "request_limit": settings.request_limit,
                              "input_token_limit": settings.input_token_limit,
                              **({"unlimited":True} if settings.unlimited else {})})
-        with sqlite3.connect(path, timeout=1) as db:
+        with private_connect(path, timeout=1) as db:
             db.execute("BEGIN IMMEDIATE")
             tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if tables - {"jev_policy", "jev_attempts", "jev_diagnostics"}:
@@ -317,7 +317,7 @@ class JevClient:
                 raise AnalysisFailure("REQUEST_BUDGET_EXHAUSTED", view) from None
 
     def _record(self, analysis_id, view, status, usage, metadata):
-        with sqlite3.connect(self.settings.budget_path, timeout=1) as db:
+        with private_connect(self.settings.budget_path, timeout=1) as db:
             db.execute("UPDATE jev_attempts SET status=?,usage=? WHERE analysis_id=? AND view=?",
                        (status, canonical(usage) if usage else None, analysis_id, view))
             # Optional new diagnostics never rewrite legacy attempts during reads.

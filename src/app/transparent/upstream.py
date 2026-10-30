@@ -7,7 +7,7 @@ import base64
 import hashlib
 import hmac
 import os
-import sqlite3
+from app.private_files import private_connect
 import ssl
 import stat
 import time
@@ -59,7 +59,7 @@ def create_app(root, ledger, forward_key, *, tool_catalog=None, execute=None):
     catalog = FILE_TOOLS if tool_catalog is None else tool_catalog
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.state.auth_audit = AuthAudit(str(ledger) + ".auth")
-    with sqlite3.connect(ledger) as db:
+    with private_connect(ledger) as db:
         db.execute("CREATE TABLE IF NOT EXISTS attempts(call TEXT PRIMARY KEY, hash TEXT, state TEXT, at REAL)")
 
     @app.post("/mcp")
@@ -99,10 +99,10 @@ def create_app(root, ledger, forward_key, *, tool_catalog=None, execute=None):
                     schema = next((t['inputSchema'] for t in catalog if t['name'] == tool), None)
                     if schema is None or not Draft202012Validator(schema).is_valid(args):
                         raise ValueError('INVALID_TOOL')
-                    with sqlite3.connect(ledger, timeout=3) as db:
+                    with private_connect(ledger, timeout=3) as db:
                         db.execute('INSERT INTO attempts VALUES(?,?,?,?)', (claim['call'], claim['hash'], 'UNKNOWN', time.time()))
                     result = await execute(tool, args)
-                    with sqlite3.connect(ledger) as db:
+                    with private_connect(ledger) as db:
                         db.execute("UPDATE attempts SET state='OBSERVED' WHERE call=?", (claim['call'],))
                     return JSONResponse({'jsonrpc': '2.0', 'id': rid, 'result': result})
                 required = {"path", "content"} if tool == "write_file" else {"path"}
@@ -111,7 +111,7 @@ def create_app(root, ledger, forward_key, *, tool_catalog=None, execute=None):
                 if tool == "write_file" and (not isinstance(args["content"], str) or len(args["content"].encode()) > 16384):
                     raise ValueError("CONTENT_LIMIT")
                 # Validate/open only AFTER durable reservation. A crash leaves UNKNOWN, no retry.
-                with sqlite3.connect(ledger, timeout=3) as db:
+                with private_connect(ledger, timeout=3) as db:
                     db.execute("INSERT INTO attempts VALUES(?,?,?,?)", (claim["call"], claim["hash"], "UNKNOWN", time.time()))
                 try:
                     fd = open_file(root, args["path"], tool == "write_file")
@@ -120,7 +120,7 @@ def create_app(root, ledger, forward_key, *, tool_catalog=None, execute=None):
                         raise
                     # The authenticated read reached its known open failure.
                     # Persist before reporting; a ledger failure remains UNKNOWN.
-                    with sqlite3.connect(ledger) as db:
+                    with private_connect(ledger) as db:
                         db.execute("UPDATE attempts SET state='OBSERVED_ERROR' WHERE call=?", (claim["call"],))
                     return JSONResponse({"jsonrpc": "2.0", "id": rid, "result": missing_read_result()})
                 with os.fdopen(fd, "w" if tool == "write_file" else "r", encoding="utf-8") as stream:
@@ -136,7 +136,7 @@ def create_app(root, ledger, forward_key, *, tool_catalog=None, execute=None):
                             raise ValueError("SOURCE_LIMIT")
                         if mask(text) != text:
                             raise ValueError("SENSITIVE_SOURCE")
-                with sqlite3.connect(ledger) as db:
+                with private_connect(ledger) as db:
                     db.execute("UPDATE attempts SET state='OBSERVED' WHERE call=?", (claim["call"],))
                 result = {"content": [{"type": "text", "text": text}], "isError": False}
             else:
